@@ -39,7 +39,7 @@ export function PublicProviderImport() {
     <section className="panel" aria-labelledby="public-provider-import">
       <div className="panel-head"><h2 id="public-provider-import">공공데이터 기관 가져오기</h2><span className="badge b-demo">관리자 전용</span></div>
       <p className="panel-note">
-        서울열린데이터광장의 '서울시 강남구 사회복지시설 목록(OA-20399)' CSV를 내려받아 붙여 넣으세요.
+        서울열린데이터광장의 “서울시 강남구 사회복지시설 목록(OA-20399)” CSV를 내려받아 붙여 넣으세요.
         주소가 강남구 관내로 확인되는 행만 가져옵니다. 원본의 시설장 개인 이름은 가져오지 않습니다.
       </p>
       <p className="panel-note">
