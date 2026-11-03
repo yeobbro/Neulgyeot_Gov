@@ -1,0 +1,39 @@
+{
+  "name": "neulgyeot-municipality",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Neulgyeot Municipality — 지역사회 통합돌봄 사례관리 플랫폼 MVP (KREWX)",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test --test-concurrency=1 tests/unit/*.test.ts tests/api/*.test.ts",
+    "test:e2e": "node --test --test-concurrency=1 tests/e2e/*.test.mjs",
+    "db:migrate": "tsx scripts/db.mts migrate",
+    "db:seed": "tsx scripts/db.mts seed",
+    "db:reset": "tsx scripts/db.mts reset"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.14",
+    "next": "16.4.4",
+    "pg": "8.23.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@types/node": "24.0.0",
+    "@types/pg": "8.15.6",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "eslint": "9.39.1",
+    "eslint-config-next": "16.4.4",
+    "playwright": "1.63.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}

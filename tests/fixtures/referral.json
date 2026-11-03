@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "transferId": "SYN-TR-DEMO-CURL-0001",
+  "eventType": "discharge-care-referral",
+  "source": { "facilityId": "SYN-HOSP-01" },
+  "destination": { "municipalityCode": "DEMO-GAON" },
+  "subject": { "patientId": "SYN-P-0901", "name": "합성환자", "birthDate": "1940-01-01", "contact": null },
+  "discharge": { "plannedDate": "2026-12-01" },
+  "clinicalSummary": { "kAdl": { "eating": "자립", "mobility": "부분 도움", "toileting": "자립" } },
+  "livingNeeds": { "livingArrangement": "독거", "housingType": "단독주택", "barriers": ["계단"], "requestedServices": ["식사 지원"] },
+  "consent": { "status": "DEMO_GRANTED", "version": "1.0", "recordedAt": "2026-11-01T10:00:00+09:00", "scope": ["identity", "discharge", "kAdl", "livingNeeds"], "sensitiveInformationConsent": "granted", "retention": "untilCaseClosure", "legalBasis": "정보주체 별도 동의 (DEMO)", "purpose": "통합돌봄 연계 검토" }
+}
