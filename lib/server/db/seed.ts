@@ -1,7 +1,9 @@
 /**
- * Synthetic DEMO data. Every place, organisation and person here is
- * fictional ("가온시", "누리군"); coordinates are on a synthetic grid,
- * not real administrative boundaries.
+ * DEMO seed for a Gangnam-gu reference geography.
+ * Administrative area names are real; the municipality, people, cases,
+ * partner organisations and service providers are synthetic. Area coordinates
+ * are approximate reference points, not official boundary polygons or
+ * household/provider locations.
  */
 import { createHash } from "node:crypto";
 import { DEFAULT_INTAKE_POLICY } from "../../integrations/hospital/consent-scope";
@@ -75,48 +77,73 @@ export async function seed(db: Db) {
 
   /* ---------------- Tenant A: 가온시 (synthetic) ---------------- */
   const T = DEMO_TENANT;
-  await seedTenant(db, T, "DEMO-GAON", "가온시 (DEMO)");
+  await seedTenant(db, T, "DEMO-GANGNAM", "서울특별시 강남구 (DEMO)");
   const regions = [
-    { id: "rg_gaon", parent_id: null, level: "sigungu", name: "가온시", code: "GA00", map_x: 50, map_y: 50 },
-    { id: "rg_haesol", parent_id: "rg_gaon", level: "eupmyeondong", name: "해솔동", code: "GA01", map_x: 25, map_y: 28 },
-    { id: "rg_daon", parent_id: "rg_gaon", level: "eupmyeondong", name: "다온동", code: "GA02", map_x: 70, map_y: 25 },
-    { id: "rg_maru", parent_id: "rg_gaon", level: "eupmyeondong", name: "마루동", code: "GA03", map_x: 30, map_y: 72 },
-    { id: "rg_saebom", parent_id: "rg_gaon", level: "eupmyeondong", name: "새봄동", code: "GA04", map_x: 74, map_y: 70 },
+    {
+      id: "rg_gaon", parent_id: null, level: "sigungu", name: "서울특별시 강남구", code: "11680",
+      map_x: null, map_y: null, latitude: 37.4951, longitude: 127.06278,
+      location_source: "서울특별시 자치구별 동 현황 및 공개 지명 좌표 참고",
+      location_precision: "district_reference",
+    },
+    {
+      id: "rg_haesol", parent_id: "rg_gaon", level: "eupmyeondong", name: "역삼1동", code: "GN-YEOKSAM1",
+      map_x: null, map_y: null, latitude: 37.50084, longitude: 127.0355,
+      location_source: "공개 행정동 중심 좌표 참고",
+      location_precision: "approximate_administrative_area_center",
+    },
+    {
+      id: "rg_daon", parent_id: "rg_gaon", level: "eupmyeondong", name: "대치4동", code: "GN-DAECHI4",
+      map_x: null, map_y: null, latitude: 37.50157, longitude: 127.0548,
+      location_source: "공개 행정동 중심 좌표 참고",
+      location_precision: "approximate_administrative_area_center",
+    },
+    {
+      id: "rg_maru", parent_id: "rg_gaon", level: "eupmyeondong", name: "수서동", code: "GN-SUSEO",
+      map_x: null, map_y: null, latitude: 37.48692, longitude: 127.1001,
+      location_source: "공개 행정동 중심 좌표 참고",
+      location_precision: "approximate_administrative_area_center",
+    },
+    {
+      id: "rg_saebom", parent_id: "rg_gaon", level: "eupmyeondong", name: "세곡동", code: "GN-SEGOK",
+      map_x: null, map_y: null, latitude: 37.4643, longitude: 127.106,
+      location_source: "공개 행정동 중심 좌표 참고",
+      location_precision: "approximate_administrative_area_center",
+    },
   ];
-  for (const rg of regions) await ins(db, "region_units", { ...rg, tenant_id: T, is_synthetic: true });
+  for (const rg of regions) await ins(db, "region_units", { ...rg, tenant_id: T, is_synthetic: false });
 
   const orgs = [
-    { id: "org_gaon_city", kind: "municipality", name: "가온시청 통합돌봄과 (DEMO)", region_unit_id: "rg_gaon" },
-    { id: "org_gaon_haesol", kind: "eupmyeondong_office", name: "해솔동 행정복지센터 (DEMO)", region_unit_id: "rg_haesol" },
-    { id: "org_gaon_maru", kind: "eupmyeondong_office", name: "마루동 행정복지센터 (DEMO)", region_unit_id: "rg_maru" },
+    { id: "org_gaon_city", kind: "municipality", name: "서울특별시 강남구 통합돌봄 시연부서 (DEMO)", region_unit_id: "rg_gaon" },
+    { id: "org_gaon_haesol", kind: "eupmyeondong_office", name: "역삼1동 주민센터 시연기관 (DEMO)", region_unit_id: "rg_haesol" },
+    { id: "org_gaon_maru", kind: "eupmyeondong_office", name: "수서동 주민센터 시연기관 (DEMO)", region_unit_id: "rg_maru" },
     { id: "org_gaon_hosp", kind: "hospital_partner", name: "늘곁 협력 요양병원 (DEMO)", region_unit_id: "rg_daon", external_code: "SYN-HOSP-01" },
   ];
   for (const o of orgs) await ins(db, "organizations", { ...o, tenant_id: T, is_synthetic: true });
 
   type P = { id: string; name: string; type: string; region: string; x: number; y: number; days: string[]; services: [ServiceType, string[]][]; cap: [ServiceType, string, number | null][] };
   const providers: P[] = [
-    { id: "pv_nursing", name: "가온 방문간호센터 (DEMO)", type: "방문간호기관", region: "rg_haesol", x: 22, y: 34, days: ["mon", "wed", "fri"],
+    { id: "pv_nursing", name: "역삼1동 방문간호 시연기관 (DEMO)", type: "방문간호기관", region: "rg_haesol", x: 22, y: 34, days: ["mon", "wed", "fri"],
       services: [["visiting_nursing", ["rg_haesol", "rg_daon", "rg_maru"]], ["visiting_health", ["rg_haesol"]]], cap: [["visiting_nursing", "available", 2], ["visiting_health", "limited", 5]] },
-    { id: "pv_meal", name: "다온 식사지원 협동조합 (DEMO)", type: "사회적협동조합", region: "rg_daon", x: 66, y: 30, days: ["mon", "tue", "wed", "thu", "fri"],
+    { id: "pv_meal", name: "대치4동 식사지원 시연기관 (DEMO)", type: "사회적협동조합", region: "rg_daon", x: 66, y: 30, days: ["mon", "tue", "wed", "thu", "fri"],
       services: [["meal", ["rg_haesol", "rg_daon", "rg_saebom"]]], cap: [["meal", "available", 1]] },
-    { id: "pv_home", name: "마루 재가돌봄센터 (DEMO)", type: "재가노인복지시설", region: "rg_maru", x: 34, y: 68, days: ["tue", "thu"],
+    { id: "pv_home", name: "수서동 재가돌봄 시연기관 (DEMO)", type: "재가노인복지시설", region: "rg_maru", x: 34, y: 68, days: ["tue", "thu"],
       services: [["home_care", ["rg_maru", "rg_saebom"]], ["housework", ["rg_maru", "rg_saebom", "rg_haesol"]]], cap: [["home_care", "full", 12], ["housework", "available", 0]] },
-    { id: "pv_mobility", name: "가온 이동지원센터 (DEMO)", type: "공공 이동지원", region: "rg_gaon", x: 50, y: 48, days: ["mon", "tue", "wed", "thu", "fri", "sat"],
+    { id: "pv_mobility", name: "강남구 이동지원 시연기관 (DEMO)", type: "공공 이동지원", region: "rg_gaon", x: 50, y: 48, days: ["mon", "tue", "wed", "thu", "fri", "sat"],
       services: [["mobility", ["rg_haesol", "rg_daon", "rg_maru", "rg_saebom"]]], cap: [["mobility", "limited", 4]] },
-    { id: "pv_housing", name: "새봄 주거개선 사회적기업 (DEMO)", type: "사회적기업", region: "rg_saebom", x: 78, y: 74, days: ["wed"],
+    { id: "pv_housing", name: "세곡동 주거개선 시연기관 (DEMO)", type: "사회적기업", region: "rg_saebom", x: 78, y: 74, days: ["wed"],
       services: [["home_modification", ["rg_gaon", "rg_haesol", "rg_daon", "rg_maru", "rg_saebom"]]], cap: [["home_modification", "available", -40]] },
-    { id: "pv_dementia", name: "가온시 치매안심센터 (DEMO)", type: "공공기관", region: "rg_gaon", x: 48, y: 56, days: ["mon", "tue", "wed", "thu", "fri"],
+    { id: "pv_dementia", name: "강남구 인지지원 시연기관 (DEMO)", type: "공공기관", region: "rg_gaon", x: 48, y: 56, days: ["mon", "tue", "wed", "thu", "fri"],
       services: [["cognitive_emotional", ["rg_haesol", "rg_daon", "rg_maru", "rg_saebom"]]], cap: [] },
-    { id: "pv_social", name: "해솔 경로당 연합 프로그램 (DEMO)", type: "지역사회 프로그램", region: "rg_haesol", x: 28, y: 22, days: ["tue", "fri"],
+    { id: "pv_social", name: "역삼1동 사회참여 프로그램 시연기관 (DEMO)", type: "지역사회 프로그램", region: "rg_haesol", x: 28, y: 22, days: ["tue", "fri"],
       services: [["social_participation", ["rg_haesol", "rg_daon"]]], cap: [["social_participation", "available", 3]] },
-    { id: "pv_meal2", name: "마루 도시락 나눔센터 (DEMO)", type: "비영리 민간단체", region: "rg_maru", x: 26, y: 78, days: ["mon", "thu"],
+    { id: "pv_meal2", name: "수서동 식사지원 시연기관 2 (DEMO)", type: "비영리 민간단체", region: "rg_maru", x: 26, y: 78, days: ["mon", "thu"],
       services: [["meal", ["rg_maru", "rg_saebom"]]], cap: [["meal", "limited", -20]] },
   ];
   for (const p of providers) {
     await ins(db, "organizations", { id: `org_${p.id}`, tenant_id: T, kind: "provider", name: p.name, region_unit_id: p.region, is_synthetic: true });
     await ins(db, "service_providers", {
-      id: p.id, tenant_id: T, organization_id: `org_${p.id}`, name: p.name, provider_type: p.type, address_label: `${regions.find((r) => r.id === p.region)?.name} (가상 주소)`,
-      map_x: p.x, map_y: p.y, coords_synthetic: true, contact_label: "000-0000-0000 (가상)", operating_hours: "평일 09:00–18:00", visit_days: p.days,
+      id: p.id, tenant_id: T, organization_id: `org_${p.id}`, name: p.name, provider_type: p.type, address_label: `${regions.find((r) => r.id === p.region)?.name} (시연 권역 · 실제 기관 주소 아님)`,
+      map_x: null, map_y: null, coords_synthetic: true, contact_label: "000-0000-0000 (가상)", operating_hours: "평일 09:00–18:00", visit_days: p.days,
       conditions: "대상자 동의 및 담당자 의뢰 필요", data_source: "DEMO 합성 데이터", is_active: true, is_synthetic: true,
     });
     for (const [t, rs] of p.services) for (const rg of rs) await ins(db, "provider_service_areas", { tenant_id: T, provider_id: p.id, region_unit_id: rg, service_type: t });
@@ -224,7 +251,7 @@ export async function seed(db: Db) {
 
   await ins(db, "integrated_support_meetings", { id: "mtg_4", tenant_id: T, case_id: "case_4", plan_id: "pln_4", scheduled_at: iso(3), status: "scheduled",
     agenda: "퇴원 후 방문간호 및 주거환경 개선 연계 검토", created_by: DEMO_USERS.cmHaesol });
-  for (const [j, [o, r]] of [["가온시청 통합돌봄과", "주관"], ["보건소 방문보건팀", "보건"], ["가온 방문간호센터", "제공기관"]].entries())
+  for (const [j, [o, r]] of [["서울특별시 강남구 통합돌봄 시연부서", "주관"], ["보건소 방문보건팀", "보건"], ["역삼1동 방문간호 시연기관", "제공기관"]].entries())
     await ins(db, "meeting_participants", { id: `mp_4_${j}`, tenant_id: T, meeting_id: "mtg_4", organization_name: `${o} (DEMO)`, participant_role: r });
 
   // Service referrals
@@ -264,7 +291,7 @@ export async function seed(db: Db) {
       trace_id: `trace-demo-000${n}`, validation: { ok: true, issues: [] }, missing_items: opts.missing ?? [], assigned_user_id: opts.assigned ?? null, case_id: opts.caseId ?? null,
     });
     const payload = {
-      schemaVersion: "1.0", transferId, source: { facilityId: "SYN-HOSP-01" }, destination: { municipalityCode: "DEMO-GAON" },
+      schemaVersion: "1.0", transferId, source: { facilityId: "SYN-HOSP-01" }, destination: { municipalityCode: "DEMO-GANGNAM" },
       discharge: { plannedDate: d(opts.discharge) },
       functionalSummary: { kAdl: { eating: "부분 도움", mobility: "부분 도움", toileting: "자립" }, cognition: "일상 의사소통 가능", fallRisk: "중간 구간" },
       livingNeeds: { livingArrangement: "독거", housingType: "다세대·연립", barriers: ["계단"], requestedServices: opts.services, socialWorkerNote: "퇴원 후 식사 준비 지원이 필요하다고 응답함 (DEMO)" },
@@ -292,15 +319,15 @@ export async function seed(db: Db) {
 
   /* ---------------- Tenant B: 누리군 (isolation test tenant) ---------------- */
   const U = OTHER_TENANT;
-  await seedTenant(db, U, "DEMO-NURI", "누리군 (DEMO)");
-  await ins(db, "region_units", { id: "rg_nuri", tenant_id: U, parent_id: null, level: "sigungu", name: "누리군", code: "NU00", map_x: 50, map_y: 50 });
-  await ins(db, "region_units", { id: "rg_nuri_a", tenant_id: U, parent_id: "rg_nuri", level: "eupmyeondong", name: "누리읍", code: "NU01", map_x: 40, map_y: 40 });
-  await ins(db, "organizations", { id: "org_nuri", tenant_id: U, kind: "municipality", name: "누리군청 (DEMO)", region_unit_id: "rg_nuri" });
-  await ins(db, "users", { id: DEMO_USERS.otherAdmin, tenant_id: U, organization_id: "org_nuri", email: "admin@nuri.demo", display_name: "누리군 관리자 (DEMO)", password_hash: pw, is_demo_account: true });
+  await seedTenant(db, U, "DEMO-NURI", "내부 격리 테스트 지자체 (DEMO, 비노출)");
+  await ins(db, "region_units", { id: "rg_nuri", tenant_id: U, parent_id: null, level: "sigungu", name: "내부 테스트 권역", code: "NU00", map_x: 50, map_y: 50 });
+  await ins(db, "region_units", { id: "rg_nuri_a", tenant_id: U, parent_id: "rg_nuri", level: "eupmyeondong", name: "내부 테스트 읍", code: "NU01", map_x: 40, map_y: 40 });
+  await ins(db, "organizations", { id: "org_nuri", tenant_id: U, kind: "municipality", name: "내부 격리 테스트 구청 (DEMO, 비노출)", region_unit_id: "rg_nuri" });
+  await ins(db, "users", { id: DEMO_USERS.otherAdmin, tenant_id: U, organization_id: "org_nuri", email: "admin@nuri.demo", display_name: "격리 테스트 관리자 (DEMO, 비노출)", password_hash: pw, is_demo_account: true });
   await ins(db, "user_roles", { tenant_id: U, user_id: DEMO_USERS.otherAdmin, role: "municipal_admin" });
   await ins(db, "care_recipients", { id: "rcp_nuri_1", tenant_id: U, recipient_code: "R-0001", display_name: "가명 N01", age_band: "80대", region_unit_id: "rg_nuri_a" });
   await ins(db, "care_cases", { id: "case_nuri_1", tenant_id: U, case_code: "C-0001", recipient_id: "rcp_nuri_1", region_unit_id: "rg_nuri_a", status: "SURVEY_IN_PROGRESS", intake_route: "self_application", primary_worker_id: DEMO_USERS.otherAdmin });
-  await ins(db, "service_providers", { id: "pv_nuri_1", tenant_id: U, organization_id: "org_nuri", name: "누리 방문간호 (DEMO)", provider_type: "방문간호기관", address_label: "누리읍 (가상)", contact_label: "가상", data_source: "DEMO" });
+  await ins(db, "service_providers", { id: "pv_nuri_1", tenant_id: U, organization_id: "org_nuri", name: "격리 테스트 방문간호 (DEMO, 비노출)", provider_type: "방문간호기관", address_label: "내부 테스트 권역 (비노출)", contact_label: "가상", data_source: "DEMO" });
 }
 
 const SAMPLE_VALUE: Record<string, string> = {
