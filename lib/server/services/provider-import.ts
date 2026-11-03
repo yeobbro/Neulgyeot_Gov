@@ -222,6 +222,6 @@ export async function setProviderVerification(tx: Db, actor: Actor, providerId: 
       updated_at=now() WHERE id=$1 AND tenant_id=$2`,
     [providerId, actor.tenantId, verified ? "verified" : "imported_unverified", actor.id],
   );
-  await audit(tx, actor, verified ? "provider.public_directory_verified" : "provider.public_directory_rejected", { type: "service_provider", id: providerId }, "success");
+  await audit(tx, actor, verified ? "provider.public_directory_verified" : "provider.public_directory_verification_revoked", { type: "service_provider", id: providerId }, "success");
   return { ok: true, verificationStatus: verified ? "verified" : "rejected" };
 }
