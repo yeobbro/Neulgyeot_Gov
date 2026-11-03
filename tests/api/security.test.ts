@@ -26,7 +26,7 @@ after(async () => { await db.close(); });
 test("unauthenticated and inactive users are rejected", async () => {
   assert.equal((await call(casesRoute.GET, {})).status, 401);
   assert.equal((await call(casesRoute.GET, { as: DEMO_USERS.inactive })).status, 401);
-  await assert.rejects(passwordLogin(db, { email: "former@gaon.demo", password: "whatever-password" }), /올바르지|비활성/);
+  await assert.rejects(passwordLogin(db, { email: "former@gangnam.demo", password: "whatever-password" }), /올바르지|비활성/);
 });
 
 test("other tenant's case ID returns 404 (tenant isolation, IDOR)", async () => {
@@ -57,7 +57,7 @@ test("case manager cannot read another region's case (404) and cannot write unas
   assert.equal((await call(caseRoute.GET, { as: DEMO_USERS.cmHaesol, params: { id: "case_5" } })).status, 404);
   assert.equal((await call(caseRoute.GET, { as: DEMO_USERS.cmHaesol, params: { id: "case_1" } })).status, 200);
   const list = await call(casesRoute.GET, { as: DEMO_USERS.cmHaesol, url: "/api/cases?pageSize=100" });
-  assert.ok(list.json.data.every((c: any) => ["해솔동", "다온동"].includes(c.region_name)));
+  assert.ok(list.json.data.every((c: any) => ["역삼1동", "대치4동"].includes(c.region_name)));
   const write = await call(records.POST, { as: DEMO_USERS.cmMaru, params: { id: "case_1" }, body: { recordType: "note", body: "다른 권역 기록 시도", occurredAt: "2026-11-03T10:00" } });
   assert.equal(write.status, 404);
   const denied = await db.query<any>(`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'access.denied'`);
