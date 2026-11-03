@@ -4,7 +4,7 @@
 
 지자체 통합돌봄 담당자가 **신청 → 조사·종합판정 → 개인별 지원계획 → 서비스 제공·연계 → 모니터링** 흐름을 처리하도록 돕는 행정형 B2G 웹 애플리케이션입니다. 병원 퇴원 연계는 별도 제품인 [늘곁 병원용](https://github.com/yeobbro/Neulgyeot)에서 **승인된 API 계약(DEMO v1.0)** 으로만 수신합니다.
 
-> ⚠️ 이 시스템은 공공기관의 공식 행정 시스템이나 법정 판정을 대체하지 않습니다. 모든 기관·대상자·지역(가온시·누리군)은 **합성 DEMO 데이터**입니다. 실제 기관 연계, 외부 IdP, Managed PostgreSQL은 아직 연결되어 있지 않습니다.
+> ⚠️ 이 시스템은 공공기관의 공식 행정 시스템이나 법정 판정을 대체하지 않습니다. 행정동 명칭과 지도 배경은 **서울특별시 강남구의 실제 지리 정보**를 참고하지만, 테넌트·기관·대상자·사례·수용 현황은 모두 **합성 DEMO 데이터**입니다. 지도 좌표는 권역 참고 중심점이며 공식 행정경계나 실제 기관·가구 위치가 아닙니다. 실제 기관 연계, 외부 IdP, Managed PostgreSQL은 아직 연결되어 있지 않습니다.
 
 ## 제품 구성
 
@@ -19,7 +19,7 @@
 - 통합 현황 대시보드(실제 집계, 지표 클릭 → 목록), 병원 연계 접수함(동의·법적 근거 메타데이터, traceId, 버전 이력)
 - 사례관리, 조사·욕구 평가(11개 영역, 무응답≠정상), 개인별 지원계획 + 통합지원회의(원클릭 승인 없음)
 - 설명 가능한 규칙 기반 제공기관 매칭(수용 정보 신선도 반영), 서비스 의뢰·제공 결과, 제공기관 포털
-- 모니터링·후속 업무, 합성 지역 자원 지도, 보고서(정의·산식·기준일·누락률), CSV(수식 주입 방지)
+- 모니터링·후속 업무, 실제 도로 지도와 행정동 참고 좌표를 활용한 지역 자원 지도(제공기관 핀은 합성 데이터이므로 미표시), 보고서(정의·산식·기준일·누락률), CSV(수식 주입 방지)
 - AI 보조 3종(연계 요약, 사회복지 종합 소견서 초안, 회의 자료) — 규칙 기반 기본, 문장별 근거, draft→사람 승인
 - PostgreSQL RLS 테넌트 격리, 감사 로그(본문 미저장, 추가 전용), CSRF/CSP/rate limit
 
@@ -40,4 +40,4 @@ npm run dev            # DATABASE_URL 없으면 인메모리 DEMO DB + 합성 �
 | `npm run db:migrate` | `DATABASE_URL` 대상 마이그레이션 |
 
 ## 문서
-[제품 명세](docs/PRODUCT_SPEC.md) · [아키텍처](docs/ARCHITECTURE.md) · [DB](docs/DATABASE.md) · [API](docs/API.md) · [병원 연계](docs/INTEGRATION_WITH_HOSPITAL.md) · [AI](docs/AI_LOGIC.md) · [보안](docs/SECURITY.md) · [개인정보·법률 검토](docs/PRIVACY_AND_LEGAL_REVIEW.md) · [데모 가이드](docs/DEMO_GUIDE.md) · [테스트 보고서](docs/TEST_REPORT.md) · [배포](docs/DEPLOYMENT.md) · [로드맵](docs/ROADMAP.md) · [기존 MVP 이전](docs/MIGRATION_FROM_EXISTING_MUNICIPAL_MVP.md)
+[지리 데이터 출처·범위](docs/GEOGRAPHIC_DATA.md) · [제품 명세](docs/PRODUCT_SPEC.md) · [아키텍처](docs/ARCHITECTURE.md) · [DB](docs/DATABASE.md) · [API](docs/API.md) · [병원 연계](docs/INTEGRATION_WITH_HOSPITAL.md) · [AI](docs/AI_LOGIC.md) · [보안](docs/SECURITY.md) · [개인정보·법률 검토](docs/PRIVACY_AND_LEGAL_REVIEW.md) · [데모 가이드](docs/DEMO_GUIDE.md) · [테스트 보고서](docs/TEST_REPORT.md) · [배포](docs/DEPLOYMENT.md) · [로드맵](docs/ROADMAP.md) · [기존 MVP 이전](docs/MIGRATION_FROM_EXISTING_MUNICIPAL_MVP.md)
