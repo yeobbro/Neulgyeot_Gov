@@ -20,6 +20,7 @@ export default async function ProvidersPage({ searchParams }: { searchParams: Pr
     <>
       <PageHead title="서비스 카탈로그 및 제공기관" desc="수용 가능 여부는 마지막 확인 시각과 함께 표시하며, 확인 기간이 지난 정보는 '확인 필요'로 표시합니다." />
       <div className="stack">
+        {d.isAdmin && <PublicProviderImport />}
         <Panel title="서비스 카탈로그" id="catalog" note="서비스 종류와 담당 부서는 지자체별로 설정할 수 있습니다.">
           <div className="table-wrap" tabIndex={0} role="region" aria-label="표 영역 (가로 스크롤)"><table className="data">
             <thead><tr><th scope="col">서비스 유형</th><th scope="col">명칭</th><th scope="col">담당 부서</th><th scope="col">운영</th></tr></thead>
