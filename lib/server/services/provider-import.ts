@@ -87,7 +87,7 @@ function classifyFacility(row: SourceRow): ServiceType[] {
   if (/장애인복지관|장애인지역사회재활/.test(type)) return ["local_special", "social_participation"];
   if (/치매안심|인지/.test(type)) return ["cognitive_emotional"];
   if (/건강가정|가족/.test(type)) return ["family_caregiver"];
-  return ["local_special"];
+  return [];
 }
 
 function regionForAddress(address: string, regions: Array<{ id: string; name: string }>) {
@@ -220,7 +220,7 @@ export async function setProviderVerification(tx: Db, actor: Actor, providerId: 
     `UPDATE service_providers SET verification_status=$3, verified_at=CASE WHEN $3='verified' THEN now() ELSE NULL END,
       verified_by=CASE WHEN $3='verified' THEN $4 ELSE NULL END, is_active=CASE WHEN $3='verified' THEN true ELSE false END,
       updated_at=now() WHERE id=$1 AND tenant_id=$2`,
-    [providerId, actor.tenantId, verified ? "verified" : "rejected", actor.id],
+    [providerId, actor.tenantId, verified ? "verified" : "imported_unverified", actor.id],
   );
   await audit(tx, actor, verified ? "provider.public_directory_verified" : "provider.public_directory_rejected", { type: "service_provider", id: providerId }, "success");
   return { ok: true, verificationStatus: verified ? "verified" : "rejected" };
