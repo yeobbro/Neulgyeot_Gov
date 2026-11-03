@@ -52,7 +52,7 @@ export function envelope(overrides: Record<string, any> = {}) {
     transferId: `SYN-TR-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
     eventType: "discharge-care-referral",
     source: { facilityId: "SYN-HOSP-01" },
-    destination: { municipalityCode: "DEMO-GAON" },
+    destination: { municipalityCode: "DEMO-GANGNAM" },
     subject: { patientId: "SYN-P-0101", name: "합성환자", birthDate: "1941-03-02", contact: null },
     discharge: { plannedDate: "2026-12-01" },
     clinicalSummary: { kAdl: { eating: "자립", mobility: "부분 도움", toileting: "자립" }, cognition: "일상 의사소통 가능" },
