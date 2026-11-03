@@ -1,6 +1,6 @@
 # 데이터베이스
 
-마이그레이션: `lib/server/db/migrations/001_init.ts`(스키마), `002_rls.ts`(RLS·권한). `npm run db:migrate`.
+마이그레이션: `001_init.ts`(스키마), `002_rls.ts`(RLS·권한), `003_geographic_coordinates.ts`(지리 참조 좌표·출처·정밀도). `npm run db:migrate`.
 
 ## 원칙
 - 모든 업무 테이블 `tenant_id NOT NULL` + `UNIQUE (tenant_id, id)` + 자식은 **복합 FK** `(tenant_id, parent_id)` → 다른 테넌트 부모 참조 불가.
@@ -13,7 +13,7 @@
 ## 테이블
 | 영역 | 테이블 |
 |---|---|
-| 조직·권한 | tenants, tenant_settings, organizations, users, user_roles, region_units, user_region_scopes |
+| 조직·권한 | tenants, tenant_settings, organizations, users, user_roles, region_units(위도·경도·출처·정밀도), user_region_scopes |
 | 대상자·사례 | care_recipients, recipient_identities, care_cases, case_assignments, applications, case_records, record_revisions, needs_assessments, assessment_items, home_environment_assessments |
 | 병원 연계 | incoming_referrals, referral_payload_versions, referral_events, consent_evidence, integration_messages, idempotency_records, integration_clients |
 | 지원계획 | support_plans, support_plan_items, integrated_support_meetings, meeting_participants, meeting_decisions |
@@ -34,3 +34,8 @@
 | 사례·기록 | 사례 종결 후 기관 규정 기간 | 공공기록물 관련 규정 확인 필요 |
 | 감사 로그 | 최소 1년 이상 권장 | 기관 지침 따름 |
 | idempotency_records | 30일 | 정리 배치 필요 |
+
+## 지리 참조 데이터
+- `region_units.latitude/longitude`는 행정동 또는 자치구의 **참고 중심 좌표**이며 주소 좌표·기관 좌표·법정 경계 폴리곤이 아니다.
+- `location_source`와 `location_precision`을 함께 저장해 좌표 출처와 정확도 범위를 화면에서 설명한다.
+- 제공기관의 실주소·정확한 좌표는 공식/기관 확인 데이터가 연결되기 전까지 비워 두며, 기존 합성 좌표는 지도 핀으로 사용하지 않는다.

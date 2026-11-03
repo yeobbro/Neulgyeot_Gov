@@ -132,7 +132,7 @@ test("dashboard metrics and reports come from real aggregates with definitions",
   assert.equal(total.value, n);
   assert.ok(d.json.metrics.every((m: any) => m.href && m.definition));
   const cm = await call(dashboardRoute.GET, { as: DEMO_USERS.cmMaru });
-  assert.ok(cm.json.regions.every((r: any) => ["마루동", "새봄동"].includes(r.region)));
+  assert.ok(cm.json.regions.every((r: any) => ["수서동", "세곡동"].includes(r.region)));
   const rep = await call(reports.GET, { as: A, url: "/api/reports?from=2026-01-01&to=2026-12-31" });
   assert.equal(rep.status, 200);
   assert.ok(rep.json.sections.every((s: any) => s.definition && s.formula));
