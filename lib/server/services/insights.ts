@@ -94,9 +94,11 @@ export async function mapData(tx: Db, actor: Actor) {
   const sigungu = (await tx.query<{ id: string }>(`SELECT id FROM region_units WHERE level = 'sigungu'`)).map((r) => r.id);
   const covers = (rid: string, t: ServiceType) => coverage.filter((c) => (c.region_unit_id === rid || sigungu.includes(c.region_unit_id)) && c.service_type === t).reduce((a, b) => a + b.n, 0);
   const out = regions.map((r) => {
-    const gaps = demand.filter((d) => d.region_unit_id === r.id && covers(r.id, d.service_type) === 0).map((d) => ({ serviceType: d.service_type, label: SERVICE_TYPE_LABEL[d.service_type], demand: d.n }));
-    const types = [...new Set(coverage.filter((c) => c.region_unit_id === r.id || sigungu.includes(c.region_unit_id)).map((c) => c.service_type))];
     const inScope = isAdmin(actor) || actor.regionScope?.includes(r.id);
+    const gaps = inScope
+      ? demand.filter((d) => d.region_unit_id === r.id && covers(r.id, d.service_type) === 0).map((d) => ({ serviceType: d.service_type, label: SERVICE_TYPE_LABEL[d.service_type], demand: d.n }))
+      : [];
+    const types = [...new Set(coverage.filter((c) => c.region_unit_id === r.id || sigungu.includes(c.region_unit_id)).map((c) => c.service_type))];
     return {
       ...r,
       openCases: inScope ? caseCounts.find((c) => c.region_unit_id === r.id)?.n ?? 0 : null,
