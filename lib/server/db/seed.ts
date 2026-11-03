@@ -159,12 +159,12 @@ export async function seed(db: Db) {
 
   const users = [
     { id: DEMO_USERS.admin, org: "org_gaon_city", email: "admin@gangnam.demo", name: "김지원 (DEMO 관리자)", roles: ["municipal_admin"], scope: [], canConfirm: true },
-    { id: DEMO_USERS.cmHaesol, org: "org_gaon_haesol", email: "cm.haesol@gaon.demo", name: "이하늘 (DEMO 담당자)", roles: ["case_manager"], scope: ["rg_haesol", "rg_daon"], canConfirm: false },
-    { id: DEMO_USERS.cmMaru, org: "org_gaon_maru", email: "cm.maru@gaon.demo", name: "박도윤 (DEMO 담당자)", roles: ["case_manager"], scope: ["rg_maru", "rg_saebom"], canConfirm: false },
+    { id: DEMO_USERS.cmHaesol, org: "org_gaon_haesol", email: "cm.haesol@gangnam.demo", name: "이하늘 (DEMO 담당자)", roles: ["case_manager"], scope: ["rg_haesol", "rg_daon"], canConfirm: false },
+    { id: DEMO_USERS.cmMaru, org: "org_gaon_maru", email: "cm.maru@gangnam.demo", name: "박도윤 (DEMO 담당자)", roles: ["case_manager"], scope: ["rg_maru", "rg_saebom"], canConfirm: false },
     { id: DEMO_USERS.providerNursing, org: "org_pv_nursing", email: "nursing@provider.gangnam.demo", name: "최서연 (DEMO 방문간호)", roles: ["service_provider"], scope: [], provider: "pv_nursing" },
-    { id: DEMO_USERS.providerMeal, org: "org_pv_meal", email: "meal@provider.gaon.demo", name: "정민호 (DEMO 식사지원)", roles: ["service_provider"], scope: [], provider: "pv_meal" },
-    { id: DEMO_USERS.auditor, org: "org_gaon_city", email: "auditor@gaon.demo", name: "한감사 (DEMO 감사)", roles: ["auditor"], scope: [] },
-    { id: DEMO_USERS.inactive, org: "org_gaon_haesol", email: "former@gaon.demo", name: "퇴직자 (DEMO 비활성)", roles: ["case_manager"], scope: ["rg_haesol"], active: false },
+    { id: DEMO_USERS.providerMeal, org: "org_pv_meal", email: "meal@provider.gangnam.demo", name: "정민호 (DEMO 식사지원)", roles: ["service_provider"], scope: [], provider: "pv_meal" },
+    { id: DEMO_USERS.auditor, org: "org_gaon_city", email: "auditor@gangnam.demo", name: "한감사 (DEMO 감사)", roles: ["auditor"], scope: [] },
+    { id: DEMO_USERS.inactive, org: "org_gaon_haesol", email: "former@gangnam.demo", name: "퇴직자 (DEMO 비활성)", roles: ["case_manager"], scope: ["rg_haesol"], active: false },
   ];
   for (const u of users) {
     await ins(db, "users", {
