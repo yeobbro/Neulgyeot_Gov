@@ -43,7 +43,7 @@ export function PublicProviderImport() {
         주소가 강남구 관내로 확인되는 행만 가져옵니다. 원본의 시설장 개인 이름은 가져오지 않습니다.
       </p>
       <div className="row" style={{ flexWrap: "wrap", marginTop: 6 }}>
-        <a className="btn btn-sm" href="https://data.seoul.go.kr/dataList/OA-20399/S/1/datasetView.do" target="_blank" rel="noopener noreferrer" aria-label="서울열린데이터광장 강남구 사회복지시설 목록 원본 데이터셋 (새 창)">공식 데이터 원본 열기 ↗</a>
+        <a className="btn btn-sm" href="https://data.seoul.go.kr/dataList/OA-20399/S/1/datasetView.do" aria-label="서울열린데이터광장 강남구 사회복지시설 목록 원본 데이터셋">공식 데이터 원본 열기 ↗</a>
         <span className="panel-note">출처표시 공공누리 제1유형 · 데이터 갱신일은 원본 페이지에서 확인</span>
       </div>
       <div className="field">
