@@ -174,7 +174,7 @@ export async function importGangnamFacilityCsv(tx: Db, actor: Actor, csv: string
          VALUES ($1,$2,$3,$4,$5,$6,true,$7,'운영시간 확인 필요','{}',$8,$9,true,false,$10,$11,NULL,
                  'imported_unverified',NULL,NULL,'주소 좌표 미확인')`,
         [providerId, actor.tenantId, organizationId, row.name, row.facilityType || row.category, row.address,
-          phone, [Number.isFinite(capacity) ? `공개 정원 ${capacity}명` : "", Number.isFinite(current) ? `공개 현원 ${current}명` : "", "실제 서비스 제공 범위·수용 현황은 기관 확인 필요"].filter(Boolean).join(" · "),
+          phone, [Number.isFinite(capacity) && capacity > 0 ? `공개 정원 ${capacity}명` : "", Number.isFinite(current) && current > 0 ? `공개 현원 ${current}명` : "", "실제 서비스 제공 범위·수용 현황은 기관 확인 필요"].filter(Boolean).join(" · "),
           "서울열린데이터광장 OA-20399", sourceRecordId, GANGNAM_SOCIAL_FACILITIES_SOURCE],
       );
       inserted++;
