@@ -30,6 +30,8 @@
 | `GET/POST .../monitoring` · `GET .../timeline` | 모니터링/타임라인 |
 | `GET /api/service-referrals` · `POST /api/service-referrals/{id}/transition` | 의뢰 보드/전이(담당자·기관 역할 구분) |
 | `GET /api/providers` · `POST /api/providers/{id}/capacity` | 기관/수용 현황 |
+| `POST /api/providers/import` | 관리자 전용: 서울시 강남구 사회복지시설 CSV 미리보기/가져오기 (`{csv, mode}`) |
+| `POST /api/providers/{id}/verification` | 관리자 전용: 공개 데이터 기관 확인 완료/검증 해제. 미검증 기관은 매칭 제외 |
 | `GET /api/tasks` · `POST /api/tasks/{id}` | 업무 |
 | `GET /api/map` | 권역 집계·공백 |
 | `GET/POST /api/reports` · `GET /api/reports/export` · `GET /api/exports/cases` · `POST /api/exports/print` | 보고서/스냅샷/CSV/인쇄 기록 |

@@ -7,9 +7,9 @@ const ADMIN = "usr_gaon_admin", CM = "usr_gaon_cm1", PV = "usr_gaon_pv2";
 
 const ok = async (page, form) => {
   await form.locator('button[type="submit"]').click();
-  await page.locator(".alert-ok, .alert-error").first().waitFor({ timeout: 15000 });
-  const err = await page.locator(".alert-error").count();
-  if (err) throw new Error("form error: " + (await page.locator(".alert-error").first().innerText()));
+  await page.locator(".alert-ok:visible, .alert-error:visible").first().waitFor({ timeout: 15000 });
+  const err = await page.locator(".alert-error:visible").count();
+  if (err) throw new Error("form error: " + (await page.locator(".alert-error:visible").first().innerText()));
 };
 
 test("S1 admin: dashboard → referral inbox → detail → assign worker", async () => {

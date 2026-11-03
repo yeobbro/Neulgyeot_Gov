@@ -17,7 +17,7 @@
 | 대상자·사례 | care_recipients, recipient_identities, care_cases, case_assignments, applications, case_records, record_revisions, needs_assessments, assessment_items, home_environment_assessments |
 | 병원 연계 | incoming_referrals, referral_payload_versions, referral_events, consent_evidence, integration_messages, idempotency_records, integration_clients |
 | 지원계획 | support_plans, support_plan_items, integrated_support_meetings, meeting_participants, meeting_decisions |
-| 서비스 | service_catalog, service_providers, provider_service_areas, provider_capacity_snapshots, service_referrals, service_delivery_events |
+| 서비스 | service_catalog, service_providers(공공 원본 ID·출처 URL·검증 상태·좌표), provider_service_areas, provider_capacity_snapshots, service_referrals, service_delivery_events |
 | 후속 | monitoring_records, action_tasks, notifications, report_snapshots |
 | AI·감사 | ai_drafts, ai_source_references, audit_logs, data_export_logs |
 | 기타 | id_counters(테넌트별 문서번호), schema_migrations |

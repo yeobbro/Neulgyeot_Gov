@@ -26,7 +26,7 @@ async function freshDays(tx: Db, tenantId: string) {
 }
 
 async function loadMatchProviders(tx: Db): Promise<MatchProvider[]> {
-  const rows = await tx.query<{ id: string; name: string; is_active: boolean; visit_days: string[]; is_synthetic: boolean }>(`SELECT id, name, is_active, visit_days, is_synthetic FROM service_providers`);
+  const rows = await tx.query<{ id: string; name: string; is_active: boolean; visit_days: string[]; is_synthetic: boolean }>(`SELECT id, name, is_active, visit_days, is_synthetic FROM service_providers WHERE verification_status IN ('demo','verified')`);
   const areas = await tx.query<{ provider_id: string; region_unit_id: string; service_type: ServiceType }>(`SELECT provider_id, region_unit_id, service_type FROM provider_service_areas`);
   const caps = await tx.query<{ provider_id: string; service_type: ServiceType; status: CapacityStatus; confirmed_at: string }>(
     `SELECT DISTINCT ON (provider_id, service_type) provider_id, service_type, status, confirmed_at FROM provider_capacity_snapshots ORDER BY provider_id, service_type, confirmed_at DESC`,
@@ -48,7 +48,7 @@ export async function listProviders(tx: Db, actor: Actor, filter: { serviceType?
   const fd = await freshDays(tx, actor.tenantId);
   const providers = await tx.query<Record<string, unknown> & { id: string }>(
     `SELECT p.id, p.name, p.provider_type, p.address_label, p.map_x, p.map_y, p.coords_synthetic, p.contact_label, p.operating_hours, p.visit_days, p.conditions,
-            p.data_source, p.is_active, p.is_synthetic, p.updated_at
+            p.data_source, p.is_active, p.is_synthetic, p.updated_at, p.verification_status, p.source_record_id, p.source_url, p.source_updated_at, p.verified_at, p.latitude, p.longitude, p.location_source
        FROM service_providers p ORDER BY p.name`,
   );
   const areas = await tx.query<{ provider_id: string; region_unit_id: string; region_name: string; service_type: ServiceType }>(
