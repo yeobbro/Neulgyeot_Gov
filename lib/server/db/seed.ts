@@ -105,7 +105,7 @@ export async function seed(db: Db) {
     },
     {
       id: "rg_saebom", parent_id: "rg_gaon", level: "eupmyeondong", name: "세곡동", code: "GN-SEGOK",
-      map_x: null, map_y: null, latitude: 37.4643, longitude: 127.106,
+      map_x: null, map_y: null, latitude: 37.47066, longitude: 127.1043,
       location_source: "공개 행정동 중심 좌표 참고",
       location_precision: "approximate_administrative_area_center",
     },
