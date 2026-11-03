@@ -5,6 +5,7 @@ import { fmtDate, fmtDateTime } from "@/lib/format";
 import { withPage } from "@/lib/server/page";
 import { listProviders } from "@/lib/server/services/providers";
 import { listRegions } from "@/lib/server/services/admin";
+import { PublicProviderImport, ProviderVerificationButton } from "@/components/client/PublicProviderImport";
 
 export const metadata = { title: "서비스 카탈로그·제공기관" };
 export default async function ProvidersPage({ searchParams }: { searchParams: Promise<{ serviceType?: string; region?: string }> }) {
@@ -34,7 +35,7 @@ export default async function ProvidersPage({ searchParams }: { searchParams: Pr
           </form>
           {d.providers.length === 0 ? <Empty>조건에 맞는 기관 없음</Empty> : (
             <div className="table-wrap" tabIndex={0} role="region" aria-label="표 영역 (가로 스크롤)"><table className="data">
-              <thead><tr><th scope="col">기관명</th><th scope="col">기관 유형</th><th scope="col" className="wrap">서비스 유형 · 수용 상태 (마지막 확인)</th><th scope="col" className="wrap">담당 지역</th><th scope="col">주소·좌표</th><th scope="col">연락처</th><th scope="col">운영 시간</th><th scope="col" className="wrap">제공 조건</th><th scope="col">데이터 출처</th></tr></thead>
+              <thead><tr><th scope="col">기관명</th><th scope="col">기관 유형</th><th scope="col" className="wrap">서비스 유형 · 수용 상태 (마지막 확인)</th><th scope="col" className="wrap">담당 지역</th><th scope="col">주소·좌표</th><th scope="col">연락처</th><th scope="col">운영 시간</th><th scope="col" className="wrap">제공 조건</th><th scope="col">데이터 출처·검증</th>{d.isAdmin && <th scope="col">검증 처리</th>}</tr></thead>
               <tbody>{d.providers.map((p: any) => (
                 <tr key={p.id}>
                   <td>{p.name} {p.is_synthetic && <DemoTag />}{!p.is_active && <Badge tone="gray">운영 중지</Badge>}</td>
@@ -42,7 +43,7 @@ export default async function ProvidersPage({ searchParams }: { searchParams: Pr
                   <td className="wrap">{p.capacity.map((c: any) => <div key={c.serviceType} style={{ marginBottom: 2 }}>{SERVICE_TYPE_LABEL[c.serviceType as ServiceType]} <CapacityBadge s={c.status} label={c.stale ? "확인 필요" : c.label} /> <small className="panel-note">{c.confirmedAt ? fmtDate(c.confirmedAt) : "확인 이력 없음"}{c.waitlist !== null ? ` · 대기 ${c.waitlist}` : ""}</small></div>)}</td>
                   <td className="wrap">{p.regions.join(", ")}</td>
                   <td>{p.address_label}{p.coords_synthetic && <small className="panel-note"> (합성 좌표)</small>}</td>
-                  <td>{p.contact_label}</td><td>{p.operating_hours}</td><td className="wrap">{p.conditions}</td><td>{p.data_source}</td>
+                  <td>{p.contact_label}</td><td>{p.operating_hours}</td><td className="wrap">{p.conditions}</td><td>{p.data_source}<div className="panel-note">{p.verification_status === "verified" ? "관리자 검증 완료" : p.verification_status === "imported_unverified" ? "공공데이터 가져옴 · 미검증" : p.verification_status === "rejected" ? "검증 반려" : "DEMO 데이터"}</div>{p.source_url && <a className="panel-note" href={p.source_url} target="_blank" rel="noopener noreferrer">원본</a>}</td>{d.isAdmin && <td>{p.verification_status === "imported_unverified" ? <ProviderVerificationButton providerId={p.id} verified={false} /> : p.verification_status === "verified" ? <ProviderVerificationButton providerId={p.id} verified={true} /> : "—"}</td>}
                 </tr>
               ))}</tbody>
             </table></div>
