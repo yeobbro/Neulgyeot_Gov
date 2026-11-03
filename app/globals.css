@@ -164,6 +164,14 @@ ol.timeline time { color: var(--text-3); font-size: 12px; display: block; }
 .bar-fill { background: var(--blue); height: 100%; }
 .map-wrap { position: relative; width: 100%; max-width: 620px; aspect-ratio: 1 / 0.8; background: repeating-linear-gradient(0deg, #f8fafc 0 19px, #eef2f7 19px 20px), repeating-linear-gradient(90deg, transparent 0 19px, #eef2f7 19px 20px); border: 1px solid var(--line); border-radius: 6px; }
 .map-wrap svg { width: 100%; height: 100%; display: block; }
+.map-wrap-real { width: 100%; max-width: none; aspect-ratio: 16 / 10; min-height: 320px; overflow: hidden; background: #e9eef3; }
+.map-wrap-real iframe { display: block; width: 100%; height: 100%; min-height: 320px; border: 0; }
+.map-attribution { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 7px; color: var(--text-3); font-size: 11px; }
+.map-attribution a { text-decoration: underline; }
+@media (max-width: 760px) {
+  .map-wrap-real { aspect-ratio: 4 / 3; min-height: 280px; }
+  .map-wrap-real iframe { min-height: 280px; }
+}
 
 /* ---------------- login ---------------- */
 .login { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
