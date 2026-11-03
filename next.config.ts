@@ -7,6 +7,7 @@ const csp = [
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
+  "frame-src https://www.openstreetmap.org",
   "font-src 'self'",
   "connect-src 'self'",
   "frame-ancestors 'none'",
