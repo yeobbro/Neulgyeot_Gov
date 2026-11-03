@@ -75,7 +75,7 @@ export async function seed(db: Db) {
   const demoPassword = process.env.DEMO_PASSWORD && process.env.DEMO_PASSWORD.length >= 12 ? process.env.DEMO_PASSWORD : null;
   const pw = demoPassword ? await hashPassword(demoPassword) : null;
 
-  /* ---------------- Tenant A: 가온시 (synthetic) ---------------- */
+  /* ---------------- Tenant A: 강남구 지역 참조 시연 (synthetic records) ---------------- */
   const T = DEMO_TENANT;
   await seedTenant(db, T, "DEMO-GANGNAM", "서울특별시 강남구 (DEMO)");
   const regions = [
@@ -158,10 +158,10 @@ export async function seed(db: Db) {
   }
 
   const users = [
-    { id: DEMO_USERS.admin, org: "org_gaon_city", email: "admin@gaon.demo", name: "김지원 (DEMO 관리자)", roles: ["municipal_admin"], scope: [], canConfirm: true },
+    { id: DEMO_USERS.admin, org: "org_gaon_city", email: "admin@gangnam.demo", name: "김지원 (DEMO 관리자)", roles: ["municipal_admin"], scope: [], canConfirm: true },
     { id: DEMO_USERS.cmHaesol, org: "org_gaon_haesol", email: "cm.haesol@gaon.demo", name: "이하늘 (DEMO 담당자)", roles: ["case_manager"], scope: ["rg_haesol", "rg_daon"], canConfirm: false },
     { id: DEMO_USERS.cmMaru, org: "org_gaon_maru", email: "cm.maru@gaon.demo", name: "박도윤 (DEMO 담당자)", roles: ["case_manager"], scope: ["rg_maru", "rg_saebom"], canConfirm: false },
-    { id: DEMO_USERS.providerNursing, org: "org_pv_nursing", email: "nursing@provider.gaon.demo", name: "최서연 (DEMO 방문간호)", roles: ["service_provider"], scope: [], provider: "pv_nursing" },
+    { id: DEMO_USERS.providerNursing, org: "org_pv_nursing", email: "nursing@provider.gangnam.demo", name: "최서연 (DEMO 방문간호)", roles: ["service_provider"], scope: [], provider: "pv_nursing" },
     { id: DEMO_USERS.providerMeal, org: "org_pv_meal", email: "meal@provider.gaon.demo", name: "정민호 (DEMO 식사지원)", roles: ["service_provider"], scope: [], provider: "pv_meal" },
     { id: DEMO_USERS.auditor, org: "org_gaon_city", email: "auditor@gaon.demo", name: "한감사 (DEMO 감사)", roles: ["auditor"], scope: [] },
     { id: DEMO_USERS.inactive, org: "org_gaon_haesol", email: "former@gaon.demo", name: "퇴직자 (DEMO 비활성)", roles: ["case_manager"], scope: ["rg_haesol"], active: false },
@@ -317,7 +317,7 @@ export async function seed(db: Db) {
   await ins(db, "id_counters", { tenant_id: T, prefix: `SR-${new Date().getFullYear()}`, value: 6 });
   await ins(db, "id_counters", { tenant_id: T, prefix: `APP-${new Date().getFullYear()}`, value: 10 });
 
-  /* ---------------- Tenant B: 누리군 (isolation test tenant) ---------------- */
+  /* ---------------- Tenant B: 내부 격리 테스트 전용 테넌트 ---------------- */
   const U = OTHER_TENANT;
   await seedTenant(db, U, "DEMO-NURI", "내부 격리 테스트 지자체 (DEMO, 비노출)");
   await ins(db, "region_units", { id: "rg_nuri", tenant_id: U, parent_id: null, level: "sigungu", name: "내부 테스트 권역", code: "NU00", map_x: 50, map_y: 50 });
