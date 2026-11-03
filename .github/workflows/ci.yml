@@ -1,0 +1,23 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: E2E (in-memory DEMO database)
+        run: |
+          DEMO_MODE=true npx next start -p 3100 &
+          for i in $(seq 1 30); do curl -sf http://localhost:3100/api/health && break; sleep 2; done
+          npm run test:e2e
