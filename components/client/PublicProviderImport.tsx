@@ -86,7 +86,7 @@ export function ProviderVerificationButton({ providerId, verified }: { providerI
         setBusy(false);
         if (!result.ok) { setError(errorText(result.error)); return; }
         router.refresh();
-      }}>{busy ? "처리 중…" : verified ? "검증 취소" : "기관 확인 완료"}</button>
+      }}>{busy ? "처리 중…" : verified ? "검증 해제" : "기관 확인 완료"}</button>
     {error && <small role="alert">{error}</small>}
   </span>;
 }
