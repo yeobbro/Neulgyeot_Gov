@@ -18,3 +18,8 @@
 - 별도 프로젝트 `neulgyeot-municipality` (기존 `neulgyeot` 프로젝트와 분리)
 - Framework: Next.js, Node 22
 - 현재 상태와 URL은 TEST_REPORT.md / PR 설명 참고
+
+## 현재 상태 (2026-11-03)
+- Vercel 프로젝트 `neulgyeot-municipality` 생성(GitHub `yeobbro/Neulgyeot_Gov` 연결), 환경변수 `DEMO_MODE=true`, `AI_FEATURE_ENABLED=false`
+- 최초 Production 빌드(`main` = 초기 커밋, 소스 없음)는 예상대로 실패. PR 병합 후 `main`에서 Production 빌드 예정
+- `DATABASE_URL`·`SESSION_SECRET` 미설정 → 인메모리 DEMO DB(비영구), 데모용 세션 키 경고 상태 — 실데이터 사용 금지
