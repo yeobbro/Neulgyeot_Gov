@@ -65,8 +65,19 @@ export async function dashboard(tx: Db, actor: Actor) {
 /* -------------------------------- map -------------------------------- */
 export async function mapData(tx: Db, actor: Actor) {
   if (!isStaff(actor)) throw forbidden();
-  const regions = await tx.query<{ id: string; name: string; map_x: number; map_y: number; is_synthetic: boolean }>(
-    `SELECT id, name, map_x, map_y, is_synthetic FROM region_units WHERE level = 'eupmyeondong' ORDER BY code`,
+  const [municipality] = await tx.query<{
+    id: string; name: string; latitude: number | null; longitude: number | null;
+    location_source: string | null; location_precision: string | null;
+  }>(
+    `SELECT id, name, latitude, longitude, location_source, location_precision
+       FROM region_units WHERE level = 'sigungu' ORDER BY code LIMIT 1`,
+  );
+  const regions = await tx.query<{
+    id: string; name: string; code: string; latitude: number | null; longitude: number | null;
+    location_source: string | null; location_precision: string | null; is_synthetic: boolean;
+  }>(
+    `SELECT id, name, code, latitude, longitude, location_source, location_precision, is_synthetic
+       FROM region_units WHERE level = 'eupmyeondong' ORDER BY code`,
   );
   const params: unknown[] = [];
   const caseCounts = await tx.query<{ region_unit_id: string; n: number }>(
@@ -93,7 +104,12 @@ export async function mapData(tx: Db, actor: Actor) {
       gaps,
     };
   });
-  return { regions: out, notice: "합성 지도 — 실제 행정구역 경계·좌표가 아닙니다. 개별 대상자 위치는 표시하지 않습니다." };
+  return {
+    municipality: municipality ?? null,
+    regions: out,
+    notice: "서울특별시 강남구의 실제 행정동 명칭과 참고 중심 좌표를 사용합니다. 좌표는 권역 대표점이며 공식 행정경계·개별 주소·기관 위치가 아닙니다.",
+    mapSource: "OpenStreetMap",
+  };
 }
 
 /* ------------------------------- reports ------------------------------- */
