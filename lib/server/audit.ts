@@ -15,7 +15,7 @@ export const AUDIT_ACTIONS = [
   "meeting.create", "meeting.record",
   "service_referral.create", "service_referral.status_change",
   "monitoring.create", "case.status_change", "case.close", "case.assign",
-  "task.update", "provider.capacity_update",
+  "task.update", "provider.capacity_update", "provider.public_directory_import", "provider.public_directory_verified", "provider.public_directory_rejected",
   "export.csv", "export.print",
   "ai.generate", "ai.approve", "ai.discard",
   "settings.update", "access.denied",
