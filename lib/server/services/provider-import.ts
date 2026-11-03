@@ -181,7 +181,7 @@ export async function importGangnamFacilityCsv(tx: Db, actor: Actor, csv: string
     } else {
       await tx.query(
         `UPDATE service_providers SET name=$3, provider_type=$4, address_label=$5, contact_label=$6,
-          conditions=$7, data_source=$8, verification_status='imported_unverified', verified_at=NULL, verified_by=NULL,
+          conditions=$7, data_source=$8, is_active=false, verification_status='imported_unverified', verified_at=NULL, verified_by=NULL,
           updated_at=now() WHERE tenant_id=$1 AND source_record_id=$2`,
         [actor.tenantId, sourceRecordId, row.name, row.facilityType || row.category, row.address, phone,
           [Number.isFinite(capacity) ? `공개 정원 ${capacity}명` : "", Number.isFinite(current) ? `공개 현원 ${current}명` : "", "실제 서비스 제공 범위·수용 현황은 기관 확인 필요"].filter(Boolean).join(" · "),
