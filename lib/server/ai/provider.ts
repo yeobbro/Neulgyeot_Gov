@@ -25,9 +25,19 @@ export interface AIProvider {
   proposeDraft(input: { tenantId: string; kind: DraftKind; sectionTitles: string[]; facts: readonly ProviderRecord[]; traceId: string }): Promise<ProviderDraft>;
 }
 
+/** The only codes Gov stores or audits. A provider-chosen string is never persisted (it could carry data). */
+export const KNOWN_PROVIDER_CODES = new Set([
+  "no_tenant_token", "circuit_open", "timeout", "network", "unavailable", "server_error", "client_error", "trace_mismatch",
+  "invalid_response", "no_result", "llm_disabled", "unauthorized", "forbidden", "tenant_mismatch", "rate_limited", "payload_too_large",
+  "invalid_request", "real_data_refused", "provider_error",
+]);
+export const knownCode = (c: string | null | undefined) => (c && KNOWN_PROVIDER_CODES.has(c) ? c : "provider_error");
+
 export class ProviderUnavailable extends Error {
-  constructor(public code: string, message: string, public status?: number) {
+  public code: string;
+  constructor(code: string, message: string, public status?: number) {
     super(message);
+    this.code = knownCode(code);
   }
 }
 
@@ -35,20 +45,29 @@ export class ProviderUnavailable extends Error {
 export class CircuitBreaker {
   private failures = 0;
   private openedAt = -1;
+  private probing = false;
   constructor(private threshold = 3, private cooldownMs = 30_000, private now: () => number = Date.now) {}
+  /** Closed: always. Open: never until the cooldown passes. Half-open: exactly ONE probe at a time. */
   allow() {
-    return this.openedAt < 0 || this.now() - this.openedAt >= this.cooldownMs;
+    if (this.openedAt < 0) return true;
+    if (this.now() - this.openedAt < this.cooldownMs || this.probing) return false;
+    this.probing = true;
+    return true;
   }
   success() {
     this.failures = 0;
     this.openedAt = -1;
+    this.probing = false;
   }
   failure() {
     this.failures += 1;
+    this.probing = false;
     if (this.failures >= this.threshold) this.openedAt = this.now();
   }
+  /** Global per provider instance on purpose: an outage of the AI service affects every tenant equally. */
   get state(): "closed" | "open" | "half-open" {
-    return this.openedAt < 0 ? "closed" : this.allow() ? "half-open" : "open";
+    if (this.openedAt < 0) return "closed";
+    return this.now() - this.openedAt >= this.cooldownMs ? "half-open" : "open";
   }
 }
 
@@ -150,19 +169,57 @@ export class AIIntelligenceProvider implements AIProvider {
 /* --------------------------------------------------------------------------------------- sentence ↔ evidence */
 const NUM = /\d+(?:\.\d+)?/g;
 const norm = (n: string) => (n.includes(".") ? String(Number(n)) : String(Number.parseInt(n, 10)));
-const numbersIn = (t: string) => new Set((t.match(NUM) ?? []).map(norm));
+const numbersIn = (t: string) => (t.match(NUM) ?? []).map(norm);
 const HAN = /[一-鿿぀-ヿ]/g;
 const HANGUL = /[가-힣]/g;
+const LATIN_WORD = /[A-Za-z]{2,}/g;
+/** Korean number words (native and sino) followed by a counter. They bypass digit checks, so they are refused. */
+const NUMBER_WORD = /(?:^|[^가-힣])(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|스무|스물|서른|마흔|쉰|십|백|천)\s*(?:번|회|차례|명|개|곳|가지|시간|분|일|주|달|개월|년|세|살|층|원|km|kg)(?![가-힣])/;
+/** Dates as (y, m, d) tuples; "M월 D일" without a year matches any fact date with the same month/day. */
+const FULL_DATE = /(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})\s*일?/g;
+const MONTH_DAY = /(\d{1,2})\s*월\s*(\d{1,2})\s*일/g;
+/** Text with dates removed, so date digits can never be reused as counts/amounts. */
+const withoutDates = (t: string) => t.replace(FULL_DATE, " ").replace(MONTH_DAY, " ");
+function datesIn(t: string): { y: number | null; m: number; d: number }[] {
+  const out: { y: number | null; m: number; d: number }[] = [];
+  for (const x of t.matchAll(/(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})\s*일?/g)) out.push({ y: +x[1], m: +x[2], d: +x[3] });
+  const rest = t.replace(/(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})\s*일?/g, " ");
+  for (const x of rest.matchAll(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/g)) out.push({ y: null, m: +x[1], d: +x[2] });
+  return out;
+}
 
-/** Checks Gov's verifyDraft does not cover: the sentence's numbers must occur in the facts it cites, and the
- * sentence must be Korean. (Semantic faithfulness cannot be fully verified automatically — humans approve.) */
-export function sentenceEvidenceProblems(text: string, cited: Fact[]): string[] {
+/** Checks Gov's verifyDraft does not cover (semantic faithfulness cannot be fully verified — humans approve):
+ *  - text is NFKC-normalised first (full-width digits etc.)
+ *  - every number must occur in ONE single cited fact (no mixing digits from different facts)
+ *  - every date must equal a date in the cited facts as a (year, month, day) tuple (no swapped day/month)
+ *  - number words with counters ("다섯 번") are refused because they cannot be checked
+ *  - the sentence must be Korean (Hangul-dominant; no Han/Kana; little Latin) */
+export function sentenceEvidenceProblems(raw: string, cited: Fact[]): string[] {
   const problems: string[] = [];
-  const src = numbersIn(cited.map((f) => f.text).join(" "));
-  const extra = [...numbersIn(text)].filter((n) => !src.has(n));
-  if (extra.length) problems.push(`근거에 없는 수치 ${extra.join(",")}`);
+  const text = raw.normalize("NFKC");
+  const facts = cited.map((f) => f.text.normalize("NFKC"));
+  const nums = numbersIn(withoutDates(text));
+  if (nums.length) {
+    const fits = facts.some((ft) => {
+      const have = numbersIn(withoutDates(ft));
+      return nums.every((n) => have.includes(n));
+    });
+    if (!fits) {
+      const all = new Set(facts.flatMap((ft) => numbersIn(withoutDates(ft))));
+      const extra = [...new Set(nums.filter((n) => !all.has(n)))];
+      problems.push(extra.length ? `근거에 없는 수치 ${extra.join(",")}` : "여러 근거의 수치를 섞은 문장");
+    }
+  }
+  const factDates = facts.flatMap(datesIn);
+  for (const dt of datesIn(text)) {
+    const ok = factDates.some((f) => f.m === dt.m && f.d === dt.d && (dt.y === null || f.y === null || f.y === dt.y));
+    if (!ok) problems.push(`근거와 다른 날짜 ${dt.y ?? ""}${dt.y ? "-" : ""}${dt.m}-${dt.d}`);
+  }
+  if (NUMBER_WORD.test(text)) problems.push("숫자를 글자로 쓴 표현(검증 불가)");
+  const hangul = (text.match(HANGUL) ?? []).length;
   const han = (text.match(HAN) ?? []).length;
-  if (han > 0 && han >= (text.match(HANGUL) ?? []).length * 0.2) problems.push("한국어가 아닌 문장");
+  const latin = (text.match(LATIN_WORD) ?? []).join("").length;
+  if (han > 0 || hangul === 0 || latin > hangul * 0.3) problems.push("한국어가 아닌 문장");
   return problems;
 }
 
@@ -191,6 +248,8 @@ export async function composeDraft(args: {
   kind: DraftKind;
   facts: Fact[];
   ruleDraft: DraftContent;
+  /** Required. Only "synthetic" data may leave Gov in this phase; anything else is blocked before any network call. */
+  dataClass: "synthetic" | "real";
   traceId?: string;
 }): Promise<ComposedDraft> {
   const traceId = args.traceId ?? `trc_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
@@ -200,6 +259,7 @@ export async function composeDraft(args: {
     aiRequestId: null, model: null, promptVersion: null, traceId, rejected: [], excludedFacts: excluded,
   };
   if (!args.provider || args.provider.name === "rules") return { ...base, fallbackReason: "ai_disabled" };
+  if (args.dataClass !== "synthetic") return { ...base, fallbackReason: "real_data_blocked" };
   if (!sendable.length) return { ...base, fallbackReason: "no_sendable_facts" };
 
   let proposal: ProviderDraft;

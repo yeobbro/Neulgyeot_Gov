@@ -44,7 +44,7 @@ test("two-phase flow on real seed FactBooks: only allowlisted, non-identifying f
     // phase 2: outside any transaction
     const seen: any[] = [];
     const provider = new AIIntelligenceProvider({ baseUrl: "http://127.0.0.1:8810", tokenForTenant: (t) => (t === "tn_gaon" ? "tok-gaon" : undefined), fetchImpl: mockService(seen) });
-    const r = await composeDraft({ provider, tenantId: "tn_gaon", kind: body.kind, facts: built.facts, ruleDraft: built.content });
+    const r = await composeDraft({ provider, tenantId: "tn_gaon", kind: body.kind, facts: built.facts, ruleDraft: built.content, dataClass: "synthetic" });
     const { sendable, excluded } = selectSendableFacts(built.facts);
     if (sendable.length) {
       assert.equal(seen.length, 1, body.kind);
@@ -66,7 +66,7 @@ test("social opinion drafts depend on assessment answers (free text), so most se
   const built = await asActor(db, CM, (tx, actor) => buildDraft(tx, actor, { kind: "social_opinion", caseId: "case_3" }));
   const { excluded } = selectSendableFacts(built.facts);
   assert.ok(excluded.filter((e) => e.reason === "free_text").length >= 1);
-  const r = await composeDraft({ provider: new AIIntelligenceProvider({ baseUrl: "http://127.0.0.1:8810", tokenForTenant: () => "t", fetchImpl: mockService([]) }), tenantId: "tn_gaon", kind: "social_opinion", facts: built.facts, ruleDraft: built.content });
+  const r = await composeDraft({ provider: new AIIntelligenceProvider({ baseUrl: "http://127.0.0.1:8810", tokenForTenant: () => "t", fetchImpl: mockService([]) }), tenantId: "tn_gaon", kind: "social_opinion", facts: built.facts, ruleDraft: built.content, dataClass: "synthetic" });
   assert.ok(r.sectionEngines.filter((e) => e === "rules").length >= 4, r.sectionEngines.join(","));
 });
 

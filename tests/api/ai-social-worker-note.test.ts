@@ -48,7 +48,7 @@ test("3. a provider request contains neither the note text nor the note's presen
     sent.push(String(init.body));
     return new Response(JSON.stringify({ request_id: "req_00000000000000000001", trace_id: "t", status: "no_result", reason: "llm_disabled", engine: "x", model: null, prompt_version: "p", sections: [], requires_human_review: true }), { status: 200 });
   }) as unknown as typeof fetch;
-  await composeDraft({ provider: new AIIntelligenceProvider({ baseUrl: "http://127.0.0.1:1", tokenForTenant: () => "t", fetchImpl }), tenantId: "tn_gaon", kind: "referral_summary", facts: built.facts, ruleDraft: built.content });
+  await composeDraft({ provider: new AIIntelligenceProvider({ baseUrl: "http://127.0.0.1:1", tokenForTenant: () => "t", fetchImpl }), tenantId: "tn_gaon", kind: "referral_summary", facts: built.facts, ruleDraft: built.content, dataClass: "synthetic" });
   assert.equal(sent.length, 1);
   assert.ok(!sent[0].includes(NOTE_TEXT) && !sent[0].includes("소견") && !sent[0].includes(`"${noteFact.id}"`));
 });

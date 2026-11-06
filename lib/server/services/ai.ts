@@ -182,7 +182,13 @@ async function ruleMeetingBrief(tx: Db, actor: Actor, caseId: string) {
 // which is not wired into this route yet. See docs/AI_PROVIDER_INTEGRATION.md.
 
 /* ------------------------------ public API ------------------------------ */
-export const generateBody = z.object({ kind: z.enum(["referral_summary", "social_opinion", "meeting_brief"]), caseId: z.string().optional(), referralId: z.string().optional() });
+/** A draft has exactly ONE target, fixed by its kind: referral_summary → referralId only; the others → caseId only.
+ * Allowing both let a user attach a case they can write to a referral they can only read (and so approve it). */
+export const generateBody = z
+  .object({ kind: z.enum(["referral_summary", "social_opinion", "meeting_brief"]), caseId: z.string().min(1).optional(), referralId: z.string().min(1).optional() })
+  .refine((b) => (b.kind === "referral_summary" ? Boolean(b.referralId) && !b.caseId : Boolean(b.caseId) && !b.referralId), {
+    message: "초안 종류에 맞는 대상 하나만 지정해야 합니다 (연계 요약: referralId, 그 외: caseId).",
+  });
 
 /**
  * Gathers facts (with the actor's read authorisation) and builds the rule draft. Pure DB reads, no network.
@@ -190,6 +196,7 @@ export const generateBody = z.object({ kind: z.enum(["referral_summary", "social
  */
 export async function buildDraft(tx: Db, actor: Actor, b: z.infer<typeof generateBody>): Promise<{ facts: Fact[]; content: DraftContent }> {
   if (!isStaff(actor)) throw forbidden();
+  if (b.caseId && b.referralId) throw invalid("초안 대상은 하나만 지정할 수 있습니다.");
   let built: { fb: FactBook; content: DraftContent };
   if (b.kind === "referral_summary") {
     if (!b.referralId) throw invalid("referralId가 필요합니다.");
@@ -212,8 +219,9 @@ export async function generateDraft(tx: Db, actor: Actor, b: z.infer<typeof gene
   if (!check.ok) throw invalid("초안 검증에 실패했습니다.", { problems: check.problems });
   const id = newId("aid");
   const stored = { ...content, facts: built.facts, text: renderDraft(content) };
-  await tx.query(`INSERT INTO ai_drafts (id, tenant_id, case_id, referral_id, kind, engine, status, content, created_by) VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8)`, [
-    id, actor.tenantId, b.caseId ?? null, b.referralId ?? null, b.kind, engine, JSON.stringify(stored), actor.id,
+  // a rule draft is the root of its own review group (AI proposals made from it join this group)
+  await tx.query(`INSERT INTO ai_drafts (id, tenant_id, case_id, referral_id, kind, engine, status, content, created_by, draft_group_id) VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8,$1)`, [
+    id, actor.tenantId, b.kind === "referral_summary" ? null : b.caseId!, b.kind === "referral_summary" ? b.referralId! : null, b.kind, engine, JSON.stringify(stored), actor.id,
   ]);
   let si = 0;
   for (const sec of content.sections)
@@ -233,7 +241,7 @@ export async function listDrafts(tx: Db, actor: Actor, target: { caseId?: string
   else if (target.referralId) await getReferral(tx, actor, target.referralId);
   else throw invalid("대상이 필요합니다.");
   return tx.query(
-    `SELECT d.id, d.kind, d.engine, d.status, d.content, d.edited_text, d.created_at, d.reviewed_at, u.display_name AS creator, ru.display_name AS reviewer
+    `SELECT d.id, d.kind, d.engine, d.status, d.content, d.edited_text, d.created_at, d.reviewed_at, d.draft_group_id, d.selection_status, d.selected_at, d.source_job_id, u.display_name AS creator, ru.display_name AS reviewer
        FROM ai_drafts d JOIN users u ON u.id = d.created_by LEFT JOIN users ru ON ru.id = d.reviewed_by
       WHERE ${target.caseId ? "d.case_id = $1" : "d.referral_id = $1"} ORDER BY d.created_at DESC LIMIT 20`,
     [target.caseId ?? target.referralId],
@@ -254,27 +262,48 @@ export const DRAFT_REVIEW_RULES = {
   discard: { case: "case.write", referral: "referral.write" },
 } as const;
 
-export async function assertDraftReview(tx: Db, actor: Actor, d: { case_id: string | null; referral_id: string | null }, action: "approve" | "discard") {
+export async function assertDraftReview(tx: Db, actor: Actor, d: { case_id: string | null; referral_id: string | null; kind?: string }, action: "approve" | "discard") {
   if (!isStaff(actor)) throw notFound("초안");
+  // exactly one target, and it must be the one the kind implies — a draft carrying both is never reviewable
+  if ((d.case_id && d.referral_id) || (!d.case_id && !d.referral_id)) throw notFound("초안");
+  if (d.kind && (d.kind === "referral_summary") !== Boolean(d.referral_id)) throw notFound("초안");
   const rule = DRAFT_REVIEW_RULES[action];
   if (d.case_id && rule.case === "case.write") return assertCaseWrite(tx, actor, d.case_id);
   if (d.referral_id && rule.referral === "referral.write") return assertReferralWrite(tx, actor, d.referral_id);
-  throw notFound("초안"); // a draft without a target is never reviewable
+  throw notFound("초안");
 }
 
 export async function reviewDraft(tx: Db, actor: Actor, draftId: string, b: z.infer<typeof reviewBody>) {
-  const [d] = await tx.query<{ case_id: string | null; referral_id: string | null; status: string; content: { text: string }; kind: DraftKind }>(`SELECT case_id, referral_id, status, content, kind FROM ai_drafts WHERE id = $1 FOR UPDATE`, [draftId]);
+  const [d] = await tx.query<{ case_id: string | null; referral_id: string | null; status: string; content: { text: string }; kind: DraftKind; draft_group_id: string; selection_status: string }>(
+    `SELECT case_id, referral_id, status, content, kind, draft_group_id, selection_status FROM ai_drafts WHERE id = $1`, [draftId]);
   if (!d) throw notFound("초안");
   await assertDraftReview(tx, actor, d, b.action);
-  if (d.status !== "draft") throw conflict("이미 처리된 초안입니다.");
+  // lock the whole group in id order: approve / discard / select on the same group serialise here
+  const group = await tx.query<{ id: string; status: string; selection_status: string }>(
+    `SELECT id, status, selection_status FROM ai_drafts WHERE draft_group_id = $1 ORDER BY id FOR UPDATE`, [d.draft_group_id]);
+  const me = group.find((g) => g.id === draftId)!;
+  if (me.status !== "draft") throw conflict("이미 처리된 초안입니다.");
+  if (b.action === "approve") {
+    if (group.some((g) => g.status === "approved")) throw conflict("이 비교 그룹에는 이미 승인된 초안이 있습니다.");
+    const others = group.filter((g) => g.id !== draftId && g.status === "draft");
+    // with competing drafts, only the SELECTED one may be approved (selection ≠ approval; both are recorded)
+    if (others.length && me.selection_status !== "selected") throw conflict("비교 중인 초안이 있습니다. 사용할 초안을 먼저 선택하세요.");
+    await tx.query(`UPDATE ai_drafts SET selection_status = 'set_aside', selected_by = NULL, selected_at = NULL WHERE draft_group_id = $1 AND id <> $2 AND status = 'draft'`, [d.draft_group_id, draftId]);
+    await tx.query(
+      `UPDATE ai_drafts SET status = 'approved', edited_text = $2, reviewed_by = $3, reviewed_at = now(),
+              selection_status = 'selected', selected_by = COALESCE(selected_by, $3), selected_at = COALESCE(selected_at, now()) WHERE id = $1`,
+      [draftId, b.editedText ?? null, actor.id]);
+  } else {
+    await tx.query(`UPDATE ai_drafts SET status = 'discarded', reviewed_by = $2, reviewed_at = now(), selection_status = 'set_aside', selected_by = NULL, selected_at = NULL WHERE id = $1`, [draftId, actor.id]);
+  }
   const status = b.action === "approve" ? "approved" : "discarded";
-  await tx.query(`UPDATE ai_drafts SET status = $2, edited_text = $3, reviewed_by = $4, reviewed_at = now() WHERE id = $1`, [draftId, status, b.editedText ?? null, actor.id]);
+  // only an APPROVED draft can become an official case record
   if (b.action === "approve" && b.saveAsRecord && d.case_id) {
     const body = `[검토 승인된 ${d.kind === "social_opinion" ? "사회복지 종합 소견" : "회의 자료"} — 담당자 확인]\n${b.editedText ?? d.content.text}`.slice(0, 4000);
     await tx.query(`INSERT INTO case_records (id, tenant_id, case_id, record_type, body, occurred_at, author_id) VALUES ($1,$2,$3,'note',$4,now(),$5)`, [newId("rec"), actor.tenantId, d.case_id, body, actor.id]);
   }
   await audit(tx, actor, b.action === "approve" ? "ai.approve" : "ai.discard", { type: "ai_draft", id: draftId }, "success", {
-    edited: Boolean(b.editedText), target: d.case_id ? "case" : "referral", kind: d.kind,
+    edited: Boolean(b.editedText), target: d.case_id ? "case" : "referral", kind: d.kind, group: d.draft_group_id,
   });
   return { status };
 }

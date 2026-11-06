@@ -50,8 +50,24 @@ test("fact policy: default-deny, value-based vocabulary, identifier guard", () =
 
 test("evidence check: numbers must come from cited facts; non-Korean rejected", () => {
   assert.deepEqual(sentenceEvidenceProblems("퇴원 예정일은 2026년 11월 20일입니다.", [FACTS[0]]), []);
-  assert.match(sentenceEvidenceProblems("퇴원 예정일은 12월 1일입니다.", [FACTS[0]])[0], /근거에 없는 수치/);
+  // dates are now compared as (year, month, day) tuples, so the wrong date is reported as a date mismatch
+  assert.deepEqual(sentenceEvidenceProblems("퇴원 예정일은 12월 1일입니다.", [FACTS[0]]), ["근거와 다른 날짜 12-1"]);
   assert.match(sentenceEvidenceProblems("出院日期已确认。", [FACTS[0]])[0], /한국어가 아닌/);
+});
+
+test("evidence check (review hardening): date tuples, no digit mixing, NFKC, number words, Hangul-dominant", () => {
+  const f = (text: string, id = "F1") => ({ id, text, sourceType: "t", sourceId: "s", field: "f" });
+  const date = f("퇴원 예정일 2026-12-01");
+  const visits = f("방문 주 3회", "F2");
+  assert.deepEqual(sentenceEvidenceProblems("퇴원 예정일은 2026년 12월 1일입니다.", [date]), []);
+  assert.deepEqual(sentenceEvidenceProblems("퇴원 예정일은 2026년 1월 12일입니다.", [date]), ["근거와 다른 날짜 2026-1-12"], "day/month swap");
+  assert.deepEqual(sentenceEvidenceProblems("12월 1일 퇴원 예정이며 주 2026회 방문합니다.", [date, visits]), ["근거에 없는 수치 2026"], "date digits reused as a count");
+  assert.deepEqual(sentenceEvidenceProblems("주 3회 방문하며 퇴원 후 2026회 확인합니다.", [visits, f("등록 2026건", "F3")]), ["여러 근거의 수치를 섞은 문장"]);
+  assert.deepEqual(sentenceEvidenceProblems("주 다섯 번 방문합니다.", [visits]), ["숫자를 글자로 쓴 표현(검증 불가)"]);
+  assert.deepEqual(sentenceEvidenceProblems("주 ５회 방문합니다.", [visits]), ["근거에 없는 수치 5"], "full-width digits are normalised");
+  assert.deepEqual(sentenceEvidenceProblems("주 ３회 방문합니다.", [visits]), []);
+  assert.deepEqual(sentenceEvidenceProblems("Visit three times a week.", [visits]), ["한국어가 아닌 문장"]);
+  assert.deepEqual(sentenceEvidenceProblems("이번 주 방문 계획이 확인되었습니다.", [visits]), [], "no false positive on 이번");
 });
 
 /* ------------------------------------------------------------------ client */
@@ -73,7 +89,7 @@ function mock(steps: Step[]) {
 }
 const provider = (f: typeof fetch, extra: Partial<ConstructorParameters<typeof AIIntelligenceProvider>[0]> = {}) =>
   new AIIntelligenceProvider({ baseUrl: "http://127.0.0.1:8810", tokenForTenant: (t) => ({ tn_gaon: "tok-gaon" } as Record<string, string>)[t], timeoutMs: 300, fetchImpl: f, ...extra });
-const compose = (p: AIIntelligenceProvider | null, tenantId = "tn_gaon") => composeDraft({ provider: p, tenantId, kind: "referral_summary", facts: FACTS, ruleDraft: RULE, traceId: "trc_test_000001" });
+const compose = (p: AIIntelligenceProvider | null, tenantId = "tn_gaon") => composeDraft({ provider: p, tenantId, kind: "referral_summary", facts: FACTS, ruleDraft: RULE, dataClass: "synthetic", traceId: "trc_test_000001" });
 
 test("request: tenant token + tenant header + trace id, only allowlisted facts, no free text, strict schema", async () => {
   const m = mock([() => json(200, okBody([{ title: "현재 확인된 주요 사실", sentences: [{ text: "퇴원 예정일은 2026년 11월 20일입니다.", source_ids: ["F1"] }] }]))]);

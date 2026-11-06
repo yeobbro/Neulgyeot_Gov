@@ -6,11 +6,13 @@ import assert from "node:assert/strict";
 import { before, beforeEach, test } from "node:test";
 import * as drafts from "../../app/api/ai/drafts/route";
 import * as review from "../../app/api/ai/drafts/[id]/review/route";
+import * as select from "../../app/api/ai/drafts/[id]/select/route";
 import { cancelJob, claimJobs, enqueueDraftJob, getJobStatus, runJob, runWorkerOnce, type AiJob } from "../../lib/server/ai/jobs";
 import type { ProviderRecord } from "../../lib/server/ai/fact-policy";
 import { ProviderUnavailable, type AIProvider, type ProviderDraft } from "../../lib/server/ai/provider";
 import { openDb, withTenant, type Db } from "../../lib/server/db/client";
 import * as m005 from "../../lib/server/db/migrations/005_ai_jobs";
+import * as m006 from "../../lib/server/db/migrations/006_ai_draft_review";
 import { AppError } from "../../lib/server/errors";
 import { resetRateLimits } from "../../lib/server/http";
 import { asActor, call, DEMO_USERS, freshDb } from "../helpers";
@@ -21,6 +23,8 @@ const CM: string = DEMO_USERS.cmHaesol; // assigned to ir_2 and case_3
 let db: Db;
 before(async () => {
   db = await freshDb();
+  // the per-tenant AI switch defaults to OFF (seed and schema); these tests exercise the enabled path for tn_gaon only
+  await db.query(`UPDATE tenant_settings SET ai_enabled = true WHERE tenant_id = 'tn_gaon'`);
 });
 beforeEach(() => resetRateLimits()); // drafts API limits 20/min per user; this file creates many drafts
 
@@ -79,16 +83,21 @@ const drain = async () => {
   await db.query(`UPDATE ai_jobs SET status = 'cancelled', cancelled_at = now(), lease_owner = NULL, lease_expires_at = NULL WHERE status IN ('pending','processing')`);
 };
 
-test("migration 005: table, constraints and RLS exist; down/up round-trips on an empty database", async () => {
+test("migrations 005+006: table, constraints and RLS exist; down/up round-trips on an empty database", async () => {
   const [rls] = await db.query<{ relrowsecurity: boolean }>(`SELECT relrowsecurity FROM pg_class WHERE relname = 'ai_jobs'`);
   assert.equal(rls.relrowsecurity, true);
   const grants = await db.query<{ privilege_type: string }>(`SELECT privilege_type FROM information_schema.role_table_grants WHERE table_name = 'ai_jobs' AND grantee = 'neulgyeot_app'`);
   assert.deepEqual(grants.map((g) => g.privilege_type).sort(), ["INSERT", "SELECT", "UPDATE"], "no DELETE for the app role");
   const fresh = await openDb({ url: null });
+  // 006 depends on 005 (FK ai_drafts.source_job_id → ai_jobs): roll back in reverse order, re-apply in order
+  await fresh.exec(m006.down);
   await fresh.exec(m005.down);
   assert.equal((await fresh.query(`SELECT 1 FROM pg_class WHERE relname = 'ai_jobs'`)).length, 0);
+  assert.equal((await fresh.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_drafts' AND column_name IN ('draft_group_id','source_job_id')`)).length, 0);
   await fresh.exec(m005.up);
+  await fresh.exec(m006.up);
   assert.equal((await fresh.query(`SELECT 1 FROM pg_class WHERE relname = 'ai_jobs'`)).length, 1);
+  assert.equal((await fresh.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_drafts' AND column_name IN ('draft_group_id','selection_status','selected_by','selected_at')`)).length, 4);
 });
 
 test("1. create: pending job, ids only — no FactBook text, prompt or note stored", async () => {
@@ -156,6 +165,9 @@ test("2+3. claim then complete: AI proposal becomes a NEW draft awaiting human r
   assert.ok(!JSON.stringify(st).includes(d.facts[0].text), "status projection carries no content");
   // the existing human approval flow (with its permission check) applies to the AI draft
   assert.equal((await call(review.POST, { as: DEMO_USERS.cmMaru, params: { id: done.result_draft_id! }, body: { action: "approve" } })).status, 404);
+  // two drafts now compete in the group: approval needs an explicit selection first (selection ≠ approval)
+  assert.equal((await call(review.POST, { as: CM, params: { id: done.result_draft_id! }, body: { action: "approve" } })).status, 409);
+  assert.equal((await call(select.POST, { as: CM, params: { id: done.result_draft_id! }, body: { action: "select" } })).status, 200);
   assert.equal((await call(review.POST, { as: CM, params: { id: done.result_draft_id! }, body: { action: "approve" } })).status, 200);
   assert.equal((await asActor(db, CM, (tx, actor) => getJobStatus(tx, actor, j.id))).resultReviewStatus, "approved");
   assert.equal(await errCode(enqueue(done.result_draft_id!)), "conflict", "AI drafts are not re-queued");
