@@ -16,7 +16,7 @@ import type { Db } from "../db/client";
 import { newId } from "../db/ids";
 import { conflict, forbidden, invalid, notFound } from "../errors";
 import { rateLimit } from "../http";
-import { getReferral } from "./referrals";
+import { assertReferralWrite, getReferral } from "./referrals";
 
 export type DraftKind = "referral_summary" | "social_opinion" | "meeting_brief";
 
@@ -242,11 +242,30 @@ export async function listDrafts(tx: Db, actor: Actor, target: { caseId?: string
 
 export const reviewBody = z.object({ action: z.enum(["approve", "discard"]), editedText: z.string().trim().min(10).max(6000).optional(), saveAsRecord: z.boolean().default(false) });
 
+/**
+ * Explicit permission check for reviewing an AI draft. Reading a draft is NOT enough to approve or discard it.
+ *   approve / discard a case draft     → assertCaseWrite   (municipal admin, or a case manager assigned to the case)
+ *   approve / discard a referral draft → assertReferralWrite (municipal admin, or the case manager assigned to the referral)
+ * Both actions currently map to the same write rule; they are separate entries so they can diverge later
+ * (e.g. allowing the author to discard) without touching callers. Other tenants: RLS hides the draft (404).
+ */
+export const DRAFT_REVIEW_RULES = {
+  approve: { case: "case.write", referral: "referral.write" },
+  discard: { case: "case.write", referral: "referral.write" },
+} as const;
+
+export async function assertDraftReview(tx: Db, actor: Actor, d: { case_id: string | null; referral_id: string | null }, action: "approve" | "discard") {
+  if (!isStaff(actor)) throw notFound("초안");
+  const rule = DRAFT_REVIEW_RULES[action];
+  if (d.case_id && rule.case === "case.write") return assertCaseWrite(tx, actor, d.case_id);
+  if (d.referral_id && rule.referral === "referral.write") return assertReferralWrite(tx, actor, d.referral_id);
+  throw notFound("초안"); // a draft without a target is never reviewable
+}
+
 export async function reviewDraft(tx: Db, actor: Actor, draftId: string, b: z.infer<typeof reviewBody>) {
   const [d] = await tx.query<{ case_id: string | null; referral_id: string | null; status: string; content: { text: string }; kind: DraftKind }>(`SELECT case_id, referral_id, status, content, kind FROM ai_drafts WHERE id = $1 FOR UPDATE`, [draftId]);
   if (!d) throw notFound("초안");
-  if (d.case_id) await assertCaseWrite(tx, actor, d.case_id);
-  else if (d.referral_id) await getReferral(tx, actor, d.referral_id);
+  await assertDraftReview(tx, actor, d, b.action);
   if (d.status !== "draft") throw conflict("이미 처리된 초안입니다.");
   const status = b.action === "approve" ? "approved" : "discarded";
   await tx.query(`UPDATE ai_drafts SET status = $2, edited_text = $3, reviewed_by = $4, reviewed_at = now() WHERE id = $1`, [draftId, status, b.editedText ?? null, actor.id]);
@@ -254,6 +273,8 @@ export async function reviewDraft(tx: Db, actor: Actor, draftId: string, b: z.in
     const body = `[검토 승인된 ${d.kind === "social_opinion" ? "사회복지 종합 소견" : "회의 자료"} — 담당자 확인]\n${b.editedText ?? d.content.text}`.slice(0, 4000);
     await tx.query(`INSERT INTO case_records (id, tenant_id, case_id, record_type, body, occurred_at, author_id) VALUES ($1,$2,$3,'note',$4,now(),$5)`, [newId("rec"), actor.tenantId, d.case_id, body, actor.id]);
   }
-  await audit(tx, actor, b.action === "approve" ? "ai.approve" : "ai.discard", { type: "ai_draft", id: draftId }, "success", { edited: Boolean(b.editedText) });
+  await audit(tx, actor, b.action === "approve" ? "ai.approve" : "ai.discard", { type: "ai_draft", id: draftId }, "success", {
+    edited: Boolean(b.editedText), target: d.case_id ? "case" : "referral", kind: d.kind,
+  });
   return { status };
 }
