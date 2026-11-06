@@ -144,6 +144,13 @@ test("retry policy: network error retried once; timeout and 4xx never retried; 5
   m = mock([() => json(503, { error: { code: "busy", message: "x" } }, { "retry-after": "0" }), () => json(200, okBody([{ title: "현재 확인된 주요 사실", sentences: [{ text: "퇴원 예정일 2026-11-20입니다.", source_ids: ["F1"] }] }]))]);
   assert.equal((await compose(provider(m.f))).engine, "hybrid");
   assert.equal(m.calls.length, 2);
+  // a 503 that persists after the in-request retry is reported as `unavailable` (the only HTTP status the job queue reschedules)
+  m = mock([() => json(503, {}, { "retry-after": "0" }), () => json(503, {}, { "retry-after": "0" })]);
+  assert.equal((await compose(provider(m.f))).fallbackReason, "unavailable");
+  assert.equal(m.calls.length, 2);
+  m = mock([() => json(500, {})]);
+  assert.equal((await compose(provider(m.f))).fallbackReason, "server_error");
+  assert.equal(m.calls.length, 1, "500 is not retried");
 });
 
 test("circuit breaker: opens after 3 failures, no calls while open, one probe after cooldown", async () => {

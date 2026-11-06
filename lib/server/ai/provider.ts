@@ -111,7 +111,8 @@ export class AIIntelligenceProvider implements AIProvider {
       }
       if (res.status >= 500) {
         this.breaker.failure();
-        throw new ProviderUnavailable("server_error", `AI 서비스 오류 ${res.status}`, res.status);
+        // 503 keeps its own code: it is the only HTTP status the async job queue reschedules
+        throw new ProviderUnavailable(res.status === 503 ? "unavailable" : "server_error", `AI 서비스 오류 ${res.status}`, res.status);
       }
       const json: unknown = await res.json().catch(() => null);
       if (!res.ok) {
