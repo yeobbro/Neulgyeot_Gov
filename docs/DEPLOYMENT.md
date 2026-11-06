@@ -30,3 +30,5 @@
 - 그래서 두 환경 모두 인스턴스별 인메모리 DB(PGlite)로 동작하고, 영구·스테이징 DB는 없습니다.
 - 정식 서비스 전까지 유료 DB는 만들지 않습니다. 마이그레이션·RLS·워커 검증은 로컬/Docker PostgreSQL로 합니다(`docs/LOCAL_POSTGRES_TESTING.md`, `npm run test:pg`).
 - `main` 병합은 Vercel Git 연동으로 Production 배포를 자동 생성합니다(PR #1–#3 이력). 병합 전에 이 점을 확인해야 합니다.
+- 데모 모드와 영구 DB: Production에서 `DATABASE_URL`이 있으면 공개 대체 세션 키를 쓰지 않습니다. 데모 로그인도 `DEMO_LOGIN=true`를 명시해야만 켜집니다. 배포 전에 `npm run check:env -- --profile=<demo|staging|production|worker>`로 점검합니다.
+- 배포 후 점검: `SMOKE_BASE_URL=<url> npm run test:smoke`(읽기 전용). 자세한 내용은 `docs/PRODUCTION_READINESS_CHECKLIST.md`, DB 설계는 `docs/DATABASE_ARCHITECTURE.md`를 참고합니다.
