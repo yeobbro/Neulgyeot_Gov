@@ -20,8 +20,13 @@ import { getReferral } from "./referrals";
 
 export type DraftKind = "referral_summary" | "social_opinion" | "meeting_brief";
 
-export function llmAvailable(tenantAiEnabled: boolean) {
-  return process.env.AI_FEATURE_ENABLED === "true" && Boolean(process.env.ANTHROPIC_API_KEY) && tenantAiEnabled;
+/**
+ * External LLM calls are deliberately disabled until the dedicated Neulgyeot
+ * AI Intelligence provider adapter is integrated and its tenant-scoped
+ * security contract is verified. Keep the rule engine as the safe fallback.
+ */
+export function llmAvailable(_tenantAiEnabled: boolean) {
+  return false;
 }
 
 class FactBook {
@@ -45,7 +50,9 @@ async function referralFacts(tx: Db, actor: Actor, referralId: string) {
     housing: p.livingNeeds?.housingType ? fb.add(`주거 형태: ${p.livingNeeds.housingType}`, "referral_payload", vId, "livingNeeds.housingType") : null,
     barriers: p.livingNeeds?.barriers?.length ? fb.add(`주거 장애요인: ${p.livingNeeds.barriers.join(", ")}`, "referral_payload", vId, "livingNeeds.barriers") : null,
     services: p.livingNeeds?.requestedServices?.length ? fb.add(`요청 서비스: ${p.livingNeeds.requestedServices.join(", ")}`, "referral_payload", vId, "livingNeeds.requestedServices") : null,
-    note: p.livingNeeds?.socialWorkerNote ? fb.add(`병원 사회복지사 소견: ${p.livingNeeds.socialWorkerNote}`, "referral_payload", vId, "livingNeeds.socialWorkerNote") : null,
+    // Free-text clinical/social-work narratives are excluded from AI facts.
+    // They may contain direct identifiers or sensitive personal information.
+    note: null,
     kadl: null as string | null,
     cognition: null as string | null,
   };
