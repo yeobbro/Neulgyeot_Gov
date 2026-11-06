@@ -1,8 +1,8 @@
 /**
  * Administrative AI assistance (3 functions). Default engine is rule-based
- * and runs entirely on the server with no external calls. An LLM engine is
- * used only when AI_FEATURE_ENABLED=true, ANTHROPIC_API_KEY is set and the
- * tenant enabled AI — and even then only de-identified fact strings are sent.
+ * and runs entirely on the server with no external calls. External LLM
+ * inference is disabled pending the dedicated AI Intelligence adapter's
+ * tenant, privacy, and evidence-validation integration tests.
  * All outputs are saved as `draft` and need human approval.
  */
 import { z } from "zod";
