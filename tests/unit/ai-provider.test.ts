@@ -33,14 +33,17 @@ test("fact policy: default-deny, value-based vocabulary, identifier guard", () =
   const why = Object.fromEntries(excluded.map((e) => [e.id, e.reason]));
   assert.deepEqual(why, {
     F4: "vocab_mismatch", // allowlisted field, but the value is not a known label
-    F5: "free_text", F6: "free_text", F7: "free_text",
+    F5: "never_send", // social worker note: excluded before any other rule, not overridable
+    F6: "free_text", F7: "free_text",
     F9: "vocab_mismatch", // real seed value of household_type
     F11: "vocab_mismatch", // plan item with free-text frequency
     F12: "not_allowlisted",
   });
   assert.equal(classifyFact(FACTS[5]), "free_text");
-  // even if free text were allowed by a future setting, identifiers are still blocked
-  assert.ok(selectSendableFacts([FACTS[4]], { allowFreeText: true }).excluded[0].reason === "identifier_pattern");
+  // a future "allow free text" setting can never release the social worker note …
+  assert.equal(selectSendableFacts([FACTS[4]], { allowFreeText: true }).excluded[0].reason, "never_send");
+  // … and other free text with identifiers is still blocked by the identifier guard
+  assert.equal(selectSendableFacts([F("F20", "보완 요청 항목: 보호자 010-1234-5678 확인", "incoming_referral", "missing_items")], { allowFreeText: true }).excluded[0].reason, "identifier_pattern");
   for (const s of ["010-1234-5678", "800101-1234567", "a@b.kr", "1234 5678 9012 3456", "환자번호 12345678"]) assert.ok(hasIdentifierPattern(s), s);
   for (const s of ["퇴원 예정일 2026-11-20", "SR-2026-0031 방문간호: 회신 대기"]) assert.ok(!hasIdentifierPattern(s), s);
 });

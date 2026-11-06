@@ -17,8 +17,22 @@ import type { Fact } from "../../domain/ai-draft";
 import { SERVICE_TYPE_LABEL } from "../../domain/enums";
 
 export type FactClass = "system" | "vocab" | "free_text";
-export type SendableFact = { id: string; text: string };
-export type ExcludedFact = { id: string; reason: "free_text" | "not_allowlisted" | "vocab_mismatch" | "identifier_pattern" };
+declare const providerRecordBrand: unique symbol;
+/** A record that passed this policy. Only selectSendableFacts() creates it, so a provider client cannot be
+ * handed raw FactBook facts by mistake (type-level separation of the rule FactBook and the provider payload). */
+export type ProviderRecord = { readonly id: string; readonly text: string; readonly [providerRecordBrand]: true };
+/** @deprecated use ProviderRecord */
+export type SendableFact = ProviderRecord;
+export type ExcludedFact = { id: string; reason: "never_send" | "free_text" | "not_allowlisted" | "vocab_mismatch" | "identifier_pattern" };
+
+/** Never sent to any provider, whatever the options (not even its presence): checked before everything else. */
+const NEVER_SEND: Array<[string, string | RegExp]> = [
+  ["referral_payload", "livingNeeds.socialWorkerNote"],
+  ["referral_payload", /^subject\./],
+  ["recipient_identity", /.*/],
+];
+export const isNeverSend = (f: Pick<Fact, "sourceType" | "field">) =>
+  NEVER_SEND.some(([t, field]) => f.sourceType === t && (typeof field === "string" ? f.field === field : field.test(f.field)));
 
 /* Controlled vocabularies: Hospital→Municipality referral contract v1.0 labels (yeobbro/Neulgyeot
  * lib/integrations/municipal-referral/types.ts, lib/hospital/types.ts) and Gov's own enums/seed values. */
@@ -74,7 +88,6 @@ const RULES: Record<string, Rule> = {
   [key("care_recipient", "household_type")]: { cls: "vocab", check: inList(HOUSEHOLD) },
   [key("support_plan", "items")]: { cls: "vocab", check: planItems },
   // typed freely by people
-  [key("referral_payload", "livingNeeds.socialWorkerNote")]: { cls: "free_text" },
   [key("incoming_referral", "missing_items")]: { cls: "free_text" },
   [key("home_environment", "barriers")]: { cls: "free_text" },
 };
@@ -100,10 +113,14 @@ const IDENTIFIER_PATTERNS: RegExp[] = [
 ];
 export const hasIdentifierPattern = (text: string) => IDENTIFIER_PATTERNS.some((p) => p.test(text));
 
-export function selectSendableFacts(facts: Fact[], opts: { allowFreeText?: boolean } = {}): { sendable: SendableFact[]; excluded: ExcludedFact[] } {
-  const sendable: SendableFact[] = [];
+export function selectSendableFacts(facts: Fact[], opts: { allowFreeText?: boolean } = {}): { sendable: ProviderRecord[]; excluded: ExcludedFact[] } {
+  const sendable: ProviderRecord[] = [];
   const excluded: ExcludedFact[] = [];
   for (const f of facts) {
+    if (isNeverSend(f)) {
+      excluded.push({ id: f.id, reason: "never_send" });
+      continue;
+    }
     const rule = f.sourceType === "assessment_item" ? ({ cls: "free_text" } as Rule) : RULES[key(f.sourceType, f.field)];
     if (!rule) {
       excluded.push({ id: f.id, reason: "not_allowlisted" });
@@ -121,7 +138,7 @@ export function selectSendableFacts(facts: Fact[], opts: { allowFreeText?: boole
       excluded.push({ id: f.id, reason: "identifier_pattern" });
       continue;
     }
-    sendable.push({ id: f.id, text: f.text });
+    sendable.push({ id: f.id, text: f.text } as ProviderRecord);
   }
   return { sendable, excluded };
 }

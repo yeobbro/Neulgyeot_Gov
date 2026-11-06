@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import { verifyDraft, type DraftContent, type Fact } from "../../domain/ai-draft";
 import type { DraftKind } from "../services/ai";
 import { errorResponseSchema, healthResponseSchema, predictResponseSchema, summarizeRequestSchema, summarizeResponseSchema, CONTRACT_MAJOR } from "./contract";
-import { selectSendableFacts, type ExcludedFact } from "./fact-policy";
+import { selectSendableFacts, type ExcludedFact, type ProviderRecord } from "./fact-policy";
 
 export type DraftEngine = "rules" | "ai-intelligence" | "hybrid";
 
@@ -22,7 +22,7 @@ export interface AIProvider {
   readonly name: "rules" | "ai-intelligence";
   health(): Promise<{ ok: boolean; reason?: string; contractVersion?: string; llmAvailable?: boolean }>;
   /** Proposes sentences for the given section titles using only `facts`. Throws ProviderUnavailable on any problem. */
-  proposeDraft(input: { tenantId: string; kind: DraftKind; sectionTitles: string[]; facts: { id: string; text: string }[]; traceId: string }): Promise<ProviderDraft>;
+  proposeDraft(input: { tenantId: string; kind: DraftKind; sectionTitles: string[]; facts: readonly ProviderRecord[]; traceId: string }): Promise<ProviderDraft>;
 }
 
 export class ProviderUnavailable extends Error {
@@ -125,7 +125,7 @@ export class AIIntelligenceProvider implements AIProvider {
     }
   }
 
-  async proposeDraft(input: { tenantId: string; kind: DraftKind; sectionTitles: string[]; facts: { id: string; text: string }[]; traceId: string }): Promise<ProviderDraft> {
+  async proposeDraft(input: { tenantId: string; kind: DraftKind; sectionTitles: string[]; facts: readonly ProviderRecord[]; traceId: string }): Promise<ProviderDraft> {
     const req = summarizeRequestSchema.parse({
       data_class: "synthetic", task_kind: input.kind, sections: input.sectionTitles,
       records: input.facts.map((f) => ({ id: f.id, text: f.text, kind: "structured" })), allow_free_text: false,

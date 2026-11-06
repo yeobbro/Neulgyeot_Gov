@@ -29,6 +29,9 @@ export function llmAvailable(_tenantAiEnabled: boolean) {
   return false;
 }
 
+/** Presence indicator used instead of the note text (see referralFacts). */
+export const SOCIAL_WORKER_NOTE_PRESENT = "병원 사회복지사 소견 첨부됨 (원문은 연계 상세 화면에서 권한자만 확인)";
+
 class FactBook {
   facts: Fact[] = [];
   add(text: string, sourceType: string, sourceId: string, field: string) {
@@ -50,9 +53,10 @@ async function referralFacts(tx: Db, actor: Actor, referralId: string) {
     housing: p.livingNeeds?.housingType ? fb.add(`주거 형태: ${p.livingNeeds.housingType}`, "referral_payload", vId, "livingNeeds.housingType") : null,
     barriers: p.livingNeeds?.barriers?.length ? fb.add(`주거 장애요인: ${p.livingNeeds.barriers.join(", ")}`, "referral_payload", vId, "livingNeeds.barriers") : null,
     services: p.livingNeeds?.requestedServices?.length ? fb.add(`요청 서비스: ${p.livingNeeds.requestedServices.join(", ")}`, "referral_payload", vId, "livingNeeds.requestedServices") : null,
-    // Free-text clinical/social-work narratives are excluded from AI facts.
-    // They may contain direct identifiers or sensitive personal information.
-    note: null,
+    // The social worker's note is free text that may contain identifiers. Rule drafts only need to know
+    // that it exists, so the fact records PRESENCE only — the note text never enters the FactBook, the stored
+    // draft or the API response. AI providers never receive this fact either (fact-policy NEVER_SEND).
+    note: p.livingNeeds?.socialWorkerNote?.trim() ? fb.add(SOCIAL_WORKER_NOTE_PRESENT, "referral_payload", vId, "livingNeeds.socialWorkerNote") : null,
     kadl: null as string | null,
     cognition: null as string | null,
   };
