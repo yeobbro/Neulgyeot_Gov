@@ -37,6 +37,8 @@ export class AiWorker {
   readonly workerId: string;
   private state: "idle" | "running" | "stopping" | "stopped" = "idle";
   private inFlight = new Map<string, AiJob>();
+  /** claimed by this instance and not finished yet (incl. claimed-but-not-started jobs of the current batch) */
+  private claimed = new Map<string, AiJob>();
   private wake: (() => void) | null = null;
   private loop: Promise<void> | null = null;
   private lastTickAt: Date | null = null;
@@ -66,8 +68,10 @@ export class AiWorker {
       for (const tenantId of tenants) {
         if (this.isStopping()) break;
         const jobs = await claimJobs(this.o.db, { tenantId, workerId: this.workerId, limit: this.o.perTenantLimit ?? 1, leaseSeconds: this.o.leaseSeconds });
+        for (const job of jobs) this.claimed.set(job.id, job);
         for (const job of jobs) {
           if (this.isStopping()) {
+            this.claimed.delete(job.id);
             // claimed but not started: hand it straight back
             if (await releaseJob(this.o.db, job, this.workerId)) this.counters.released++;
             continue;
@@ -80,6 +84,7 @@ export class AiWorker {
             this.log("job", { job: job.id, tenant: tenantId, outcome, attempt: job.attempt_count });
           } finally {
             this.inFlight.delete(job.id);
+            this.claimed.delete(job.id);
           }
         }
       }
@@ -128,7 +133,11 @@ export class AiWorker {
     const timedOut = await Promise.race([loop.then(() => false), new Promise<boolean>((r) => (timer = setTimeout(() => r(true), graceMs)))]);
     clearTimeout(timer);
     if (timedOut) {
-      for (const job of [...this.inFlight.values()]) if (await releaseJob(this.o.db, job, this.workerId)) this.counters.released++;
+      // everything this instance still holds: the running job AND claimed-but-not-started jobs of the batch
+      for (const job of [...this.claimed.values()]) {
+        if (await releaseJob(this.o.db, job, this.workerId)) this.counters.released++;
+        this.claimed.delete(job.id);
+      }
     }
     this.state = "stopped";
     this.log("stopped", { released: this.counters.released });

@@ -53,7 +53,9 @@ function toView(rows: Row[], job: JobView | null): DraftGroupView {
 export async function listDraftGroups(tx: Db, target: { caseId?: string; referralId?: string }): Promise<DraftGroupView[]> {
   const rows = await tx.query<Row>(
     `SELECT ${COLS} ${FROM} WHERE d.draft_group_id IN (
-       SELECT id FROM ai_drafts WHERE ${target.caseId ? "case_id = $1" : "referral_id = $1"} AND id = draft_group_id ORDER BY created_at DESC LIMIT 20)`,
+       SELECT id FROM ai_drafts WHERE ${target.caseId ? "case_id = $1 AND referral_id IS NULL AND kind <> 'referral_summary'" : "referral_id = $1 AND case_id IS NULL AND kind = 'referral_summary'"}
+          AND id = draft_group_id ORDER BY created_at DESC LIMIT 20)
+       AND num_nonnulls(d.case_id, d.referral_id) = 1`,
     [target.caseId ?? target.referralId],
   );
   const byGroup = new Map<string, Row[]>();
@@ -91,10 +93,15 @@ export async function getDraftGroup(tx: Db, actor: Actor, draftId: string) {
   return { ...view, canReview };
 }
 
-/** Locks every draft of the group in id order (deterministic → no deadlock between concurrent reviewers). */
+/**
+ * Locks every draft of the group in id order (deterministic → no deadlock between concurrent reviewers), then
+ * reads the group again: under READ COMMITTED a row inserted by a concurrent writer (an AI draft committed while
+ * we waited for the lock) is only visible to a NEW statement (review finding).
+ */
 export async function lockGroup(tx: Db, groupId: string) {
-  return tx.query<{ id: string; status: string; selection_status: string; engine: string }>(
-    `SELECT id, status, selection_status, engine FROM ai_drafts WHERE draft_group_id = $1 ORDER BY id FOR UPDATE`, [groupId]);
+  const q = `SELECT id, status, selection_status, engine FROM ai_drafts WHERE draft_group_id = $1 ORDER BY id FOR UPDATE`;
+  await tx.query(q, [groupId]);
+  return tx.query<{ id: string; status: string; selection_status: string; engine: string }>(q, [groupId]);
 }
 
 export async function selectDraft(tx: Db, actor: Actor, draftId: string) {

@@ -136,7 +136,7 @@ test("2+3. claim then complete: AI proposal becomes a NEW draft awaiting human r
   const claimed = await claimJobs(db, { tenantId: T, workerId: "wk_a", limit: 5 });
   assert.deepEqual(claimed.map((c) => c.id), [j.id]);
   assert.equal(claimed[0].status, "processing");
-  assert.equal(claimed[0].lease_owner, "wk_a");
+  assert.match(claimed[0].lease_owner!, /^wk_a:[0-9a-f]{12}$/, "lease owner = worker id + random per-claim token");
   assert.equal(claimed[0].attempt_count, 1);
   const p = new MockProvider(["ok"], db);
   assert.equal(await runJob(db, claimed[0], { provider: p, workerId: "wk_a" }), "completed");
@@ -265,7 +265,8 @@ test("7. duplicate workers: one claim per job; an expired lease is taken over an
   const [w1, w2] = await Promise.all([claimJobs(db, { tenantId: T, workerId: "wk_1", limit: 5 }), claimJobs(db, { tenantId: T, workerId: "wk_2", limit: 5 })]);
   assert.equal(w1.length + w2.length, 1, "exactly one worker owns the job");
   const mine = [...w1, ...w2][0];
-  const owner = mine.lease_owner!;
+  const owner = mine.lease_owner!.split(":")[0]; // worker id part of "<worker>:<per-claim token>"
+  assert.ok(owner === "wk_1" || owner === "wk_2");
   const otherWorker = owner === "wk_1" ? "wk_2" : "wk_1";
   assert.equal(await runJob(db, mine, { provider: new MockProvider(), workerId: otherWorker }), "stale", "a non-owner cannot process it");
 

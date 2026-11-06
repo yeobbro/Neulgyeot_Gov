@@ -33,8 +33,20 @@ export const KNOWN_PROVIDER_CODES = new Set([
   // AI Intelligence v1.1 prototype (ai_ext/server.py, tokens.py) — verified against the running prototype
   "token_expired", "token_revoked", "unauthenticated", "forbidden_scope", "real_data_blocked", "not_found", "input_too_large",
   "busy", "internal_error", "no_usable_records", "schema_invalid",
+  // reasons the prototype copies from its LLM adapter (Neulgyeot-AI-Intelligence/llm/adapters.py)
+  "invalid_json", "blocked", "llm_unavailable", "all_sentences_rejected",
 ]);
 export const knownCode = (c: string | null | undefined) => (c && KNOWN_PROVIDER_CODES.has(c) ? c : "provider_error");
+/** Codes only Gov itself may raise. A provider answer carrying one of them is NOT trusted (it could e.g. trigger
+ * the circuit-open deferral, which refunds the attempt although a call was made). */
+const GOV_CONTROL_CODES = new Set(["no_tenant_token", "circuit_open", "network", "unavailable", "server_error", "client_error", "trace_mismatch", "invalid_response"]);
+/**
+ * Maps a code taken from a provider RESPONSE. Codes that steer Gov's job control flow (retry: network/unavailable,
+ * deferral: circuit_open) are only ever raised by Gov's own client. The prototype reports a server-side LLM outage
+ * as reason "unavailable" — kept as the non-retried `llm_unavailable`. Known codes pass, anything else → provider_error.
+ */
+export const providerSuppliedCode = (c: string | null | undefined) =>
+  c === "unavailable" ? "llm_unavailable" : c && KNOWN_PROVIDER_CODES.has(c) && !GOV_CONTROL_CODES.has(c) ? c : "provider_error";
 
 export class ProviderUnavailable extends Error {
   public code: string;
@@ -60,6 +72,10 @@ export class CircuitBreaker {
   success() {
     this.failures = 0;
     this.openedAt = -1;
+    this.probing = false;
+  }
+  /** Ends a probe that finished without a verdict (any exit path not covered by success()/failure()). */
+  release() {
     this.probing = false;
   }
   failure() {
@@ -110,6 +126,14 @@ export class AIIntelligenceProvider implements AIProvider {
     const token = this.cfg.tokenForTenant(tenantId);
     if (!token) throw new ProviderUnavailable("no_tenant_token", "이 기관에 대한 AI 토큰이 없습니다.");
     if (!this.breaker.allow()) throw new ProviderUnavailable("circuit_open", "AI 서비스 연속 실패로 일시 중단");
+    try {
+      return await this.send(path, tenantId, traceId, body, token);
+    } finally {
+      this.breaker.release(); // a half-open probe can never stay "in progress" (review finding)
+    }
+  }
+
+  private async send(path: string, tenantId: string, traceId: string, body: unknown, token: string): Promise<unknown> {
     const maxRetries = this.cfg.maxRetries ?? 1;
     for (let attempt = 0; ; attempt++) {
       let res: Response;
@@ -140,9 +164,14 @@ export class AIIntelligenceProvider implements AIProvider {
       if (!res.ok) {
         // 4xx: our configuration or request is wrong — not retried and not counted against the service
         const err = errorResponseSchema.safeParse(json);
-        throw new ProviderUnavailable(err.success ? err.data.error.code : "client_error", `AI 요청 거부 ${res.status}`, res.status);
+        // the service answered, so it is reachable: close the breaker (also ends a half-open probe)
+        this.breaker.success();
+        throw new ProviderUnavailable(err.success ? providerSuppliedCode(err.data.error.code) : "client_error", `AI 요청 거부 ${res.status}`, res.status);
       }
-      if (res.headers.get("x-request-id") && res.headers.get("x-request-id") !== traceId) throw new ProviderUnavailable("trace_mismatch", "응답 추적 ID 불일치");
+      if (res.headers.get("x-request-id") && res.headers.get("x-request-id") !== traceId) {
+        this.breaker.failure();
+        throw new ProviderUnavailable("trace_mismatch", "응답 추적 ID 불일치");
+      }
       this.breaker.success();
       return json;
     }
@@ -156,7 +185,7 @@ export class AIIntelligenceProvider implements AIProvider {
     const parsed = summarizeResponseSchema.safeParse(await this.post("/ai/v1/summarize", input.tenantId, input.traceId, req));
     if (!parsed.success) throw new ProviderUnavailable("invalid_response", "AI 응답 형식 오류");
     const r = parsed.data;
-    if (r.status !== "ok") throw new ProviderUnavailable(r.reason ?? "no_result", "AI 결과 없음");
+    if (r.status !== "ok") throw new ProviderUnavailable(r.reason ? providerSuppliedCode(r.reason) : "no_result", "AI 결과 없음");
     return { requestId: r.request_id, model: r.model, promptVersion: r.prompt_version, engine: r.engine,
       sections: r.sections.map((s) => ({ title: s.title, sentences: s.sentences.map((x) => ({ text: x.text, factIds: x.source_ids })) })) as DraftContent["sections"] };
   }

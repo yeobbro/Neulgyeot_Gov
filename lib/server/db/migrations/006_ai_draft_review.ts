@@ -14,6 +14,14 @@ export const version = "006_ai_draft_review";
 export const up = `
 ALTER TABLE ai_drafts ADD COLUMN draft_group_id text;
 UPDATE ai_drafts SET draft_group_id = COALESCE(content #>> '{ai,sourceDraftId}', id);
+-- legacy safety: before this workflow a rule draft and an AI proposal made from it could BOTH be approved. Keep the
+-- group's approval (the root's if approved, otherwise the earliest); any other approved draft becomes the root of
+-- its own group, so the one-approved/one-selected indexes below can be built. Nothing is deleted or un-approved.
+UPDATE ai_drafts d SET draft_group_id = d.id
+ WHERE d.id <> d.draft_group_id AND d.status = 'approved'
+   AND EXISTS (SELECT 1 FROM ai_drafts o
+                WHERE o.tenant_id = d.tenant_id AND o.draft_group_id = d.draft_group_id AND o.id <> d.id AND o.status = 'approved'
+                  AND (o.id = o.draft_group_id OR (o.reviewed_at, o.id) < (d.reviewed_at, d.id)));
 ALTER TABLE ai_drafts ALTER COLUMN draft_group_id SET NOT NULL;
 ALTER TABLE ai_drafts ADD CONSTRAINT ai_drafts_group_fk FOREIGN KEY (tenant_id, draft_group_id) REFERENCES ai_drafts(tenant_id, id);
 

@@ -78,12 +78,16 @@ const groupHasApproved = async (tx: Db, groupId: string) =>
   (await tx.query(`SELECT 1 FROM ai_drafts WHERE draft_group_id = $1 AND status = 'approved'`, [groupId])).length > 0;
 
 /** "synthetic" only if the tenant AND (for case drafts) the care recipient are flagged synthetic. Never guessed. */
-async function dataClassFor(tx: Db, tenantId: string, d: { case_id: string | null }): Promise<"synthetic" | "real"> {
+async function dataClassFor(tx: Db, tenantId: string, d: { case_id: string | null; referral_id: string | null }): Promise<"synthetic" | "real"> {
   const [t] = await tx.query<{ is_synthetic: boolean }>(`SELECT is_synthetic FROM tenants WHERE id = $1`, [tenantId]);
   if (!t?.is_synthetic) return "real";
-  if (d.case_id) {
+  // the person behind the draft: the case's recipient, or — for a referral already linked to a case — that recipient
+  const caseId = d.case_id ?? (d.referral_id
+    ? (await tx.query<{ case_id: string | null }>(`SELECT case_id FROM incoming_referrals WHERE id = $1`, [d.referral_id]))[0]?.case_id ?? null
+    : null);
+  if (caseId) {
     const [r] = await tx.query<{ is_synthetic: boolean }>(
-      `SELECT r.is_synthetic FROM care_cases c JOIN care_recipients r ON r.id = c.recipient_id WHERE c.id = $1`, [d.case_id]);
+      `SELECT r.is_synthetic FROM care_cases c JOIN care_recipients r ON r.id = c.recipient_id WHERE c.id = $1`, [caseId]);
     if (!r?.is_synthetic) return "real";
   }
   return "synthetic";
@@ -145,7 +149,8 @@ export async function claimJobs(db: Db, o: { tenantId: string; workerId: string;
     );
     for (const j of exhausted) await audit(tx, null, "ai.job.fail", { type: "ai_job", id: j.id }, "failure", { code: "lease_expired" }, o.tenantId);
     return tx.query<AiJob>(
-      `UPDATE ai_jobs SET status = 'processing', lease_owner = $1, lease_expires_at = now() + make_interval(secs => $2),
+      `UPDATE ai_jobs SET status = 'processing', lease_owner = $1 || ':' || substr(md5(random()::text || clock_timestamp()::text || id), 1, 12),
+              lease_expires_at = now() + make_interval(secs => $2),
               attempt_count = attempt_count + 1, started_at = COALESCE(started_at, now())
         WHERE id IN (
           SELECT id FROM ai_jobs
@@ -167,9 +172,12 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | "job_timeout"> {
   let t: NodeJS.Timeout;
   return Promise.race([p, new Promise<"job_timeout">((r) => (t = setTimeout(() => r("job_timeout"), ms)))]).finally(() => clearTimeout(t));
 }
-/** The lease is ours only if the owner AND the attempt number match (same worker id re-claiming ≠ same lease). */
+/**
+ * The lease is ours only if it is the exact lease we claimed: lease_owner = "<workerId>:<random per claim>" and the
+ * attempt number match. A re-claim by the same worker id (after a release/deferral) is a different lease.
+ */
 const ownsLease = (j: AiJob | undefined, job: AiJob, workerId: string) =>
-  Boolean(j && j.status === "processing" && j.lease_owner === workerId && j.attempt_count === job.attempt_count);
+  Boolean(j && j.status === "processing" && job.lease_owner?.startsWith(`${workerId}:`) && j.lease_owner === job.lease_owner && j.attempt_count === job.attempt_count);
 
 type Prepared = { problem: string } | { src: DraftRow; facts: Fact[]; ruleDraft: DraftContent; dataClass: "synthetic" | "real" };
 

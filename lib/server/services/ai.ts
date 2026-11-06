@@ -279,8 +279,10 @@ export async function reviewDraft(tx: Db, actor: Actor, draftId: string, b: z.in
   if (!d) throw notFound("초안");
   await assertDraftReview(tx, actor, d, b.action);
   // lock the whole group in id order: approve / discard / select on the same group serialise here
-  const group = await tx.query<{ id: string; status: string; selection_status: string }>(
-    `SELECT id, status, selection_status FROM ai_drafts WHERE draft_group_id = $1 ORDER BY id FOR UPDATE`, [d.draft_group_id]);
+  const lockQ = `SELECT id, status, selection_status FROM ai_drafts WHERE draft_group_id = $1 ORDER BY id FOR UPDATE`;
+  await tx.query(lockQ, [d.draft_group_id]);
+  // second read: sees a sibling committed while we waited for the lock (READ COMMITTED statement snapshot)
+  const group = await tx.query<{ id: string; status: string; selection_status: string }>(lockQ, [d.draft_group_id]);
   const me = group.find((g) => g.id === draftId)!;
   if (me.status !== "draft") throw conflict("이미 처리된 초안입니다.");
   if (b.action === "approve") {
