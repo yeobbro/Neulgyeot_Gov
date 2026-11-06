@@ -7,7 +7,7 @@
  */
 import { z } from "zod";
 import { ANSWER_STATUS_LABEL, ASSESSMENT_DOMAIN_LABEL, SERVICE_REFERRAL_STATUS_LABEL, SERVICE_TYPE_LABEL, TASK_TYPE_LABEL, type AnswerStatus, type AssessmentDomain, type ServiceType } from "../../domain/enums";
-import { draftSchema, renderDraft, verifyDraft, type DraftContent, type Fact } from "../../domain/ai-draft";
+import { renderDraft, verifyDraft, type DraftContent, type Fact } from "../../domain/ai-draft";
 import { matchProviders } from "../../domain/matching";
 import type { Actor } from "../auth/session";
 import { audit } from "../audit";
@@ -171,41 +171,21 @@ async function ruleMeetingBrief(tx: Db, actor: Actor, caseId: string) {
   return { fb, content };
 }
 
-/* ------------------------------ optional LLM ------------------------------ */
-async function llmRewrite(kind: DraftKind, facts: Fact[], skeleton: DraftContent): Promise<DraftContent | null> {
-  const factList = facts.map((f) => `${f.id}: ${f.text}`).join("\n");
-  const prompt = `당신은 지역사회 통합돌봄 담당 공무원의 문서 작성 보조자입니다. 아래 사실(F번호)만 사용해 '${kind}' 검토용 초안을 작성하세요.
-규칙: 사실에 없는 내용 추측 금지, 복지 자격·긴급성·위험도 판단 금지, 진단·예후 작성 금지, 낙인 표현 금지, 객관적 공공행정 문체.
-모든 문장은 근거 F번호를 factIds에 1개 이상 포함해야 합니다. 섹션 제목은 다음을 유지: ${skeleton.sections.map((s) => s.title).join(" / ")}
-JSON만 출력: {"sections":[{"title":"...","sentences":[{"text":"...","factIds":["F1"]}]}]}
-사실:
-${factList}`;
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: process.env.AI_MODEL ?? "claude-sonnet-4-5", max_tokens: 1500, messages: [{ role: "user", content: prompt }] }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { content?: { type: string; text?: string }[] };
-    const text = data.content?.find((c) => c.type === "text")?.text ?? "";
-    const m = text.match(/\{[\s\S]*\}/);
-    if (!m) return null;
-    const parsed = draftSchema.safeParse(JSON.parse(m[0]));
-    if (!parsed.success) return null;
-    return verifyDraft(parsed.data, facts).ok ? parsed.data : null;
-  } catch {
-    return null;
-  }
-}
+/* ------------------------------ AI providers ------------------------------ */
+// The former direct call to an external LLM API (llmRewrite) was removed: it was unreachable because
+// llmAvailable() returns false, and it sent unescaped fact text to an external service. AI proposals now go
+// through lib/server/ai/provider.ts (local AI Intelligence, tenant-scoped tokens, allowlisted facts only),
+// which is not wired into this route yet. See docs/AI_PROVIDER_INTEGRATION.md.
 
 /* ------------------------------ public API ------------------------------ */
 export const generateBody = z.object({ kind: z.enum(["referral_summary", "social_opinion", "meeting_brief"]), caseId: z.string().optional(), referralId: z.string().optional() });
 
-export async function generateDraft(tx: Db, actor: Actor, b: z.infer<typeof generateBody>) {
+/**
+ * Gathers facts (with the actor's read authorisation) and builds the rule draft. Pure DB reads, no network.
+ * Exported so a provider-based flow can run it in a short transaction and call the AI provider outside it.
+ */
+export async function buildDraft(tx: Db, actor: Actor, b: z.infer<typeof generateBody>): Promise<{ facts: Fact[]; content: DraftContent }> {
   if (!isStaff(actor)) throw forbidden();
-  rateLimit(`ai:${actor.id}`, 20, 60_000);
   let built: { fb: FactBook; content: DraftContent };
   if (b.kind === "referral_summary") {
     if (!b.referralId) throw invalid("referralId가 필요합니다.");
@@ -214,21 +194,20 @@ export async function generateDraft(tx: Db, actor: Actor, b: z.infer<typeof gene
     if (!b.caseId) throw invalid("caseId가 필요합니다.");
     built = b.kind === "social_opinion" ? await ruleSocialOpinion(tx, actor, b.caseId) : await ruleMeetingBrief(tx, actor, b.caseId);
   }
-  // Drop empty sections' sentences gracefully but keep headings for structure.
-  let content = built.content;
-  let engine: "rules" | "llm" = "rules";
-  const [s] = await tx.query<{ ai_enabled: boolean }>(`SELECT ai_enabled FROM tenant_settings WHERE tenant_id = $1`, [actor.tenantId]);
-  if (llmAvailable(Boolean(s?.ai_enabled))) {
-    const out = await llmRewrite(b.kind, built.fb.facts, content);
-    if (out) {
-      content = out;
-      engine = "llm";
-    }
-  }
-  const check = verifyDraft(content, built.fb.facts);
+  return { facts: built.fb.facts, content: built.content };
+}
+
+export async function generateDraft(tx: Db, actor: Actor, b: z.infer<typeof generateBody>) {
+  if (!isStaff(actor)) throw forbidden();
+  rateLimit(`ai:${actor.id}`, 20, 60_000);
+  const built = await buildDraft(tx, actor, b);
+  // Rule engine only: external/remote inference stays disabled in this route (llmAvailable() === false).
+  const content = built.content;
+  const engine = "rules" as const;
+  const check = verifyDraft(content, built.facts);
   if (!check.ok) throw invalid("초안 검증에 실패했습니다.", { problems: check.problems });
   const id = newId("aid");
-  const stored = { ...content, facts: built.fb.facts, text: renderDraft(content) };
+  const stored = { ...content, facts: built.facts, text: renderDraft(content) };
   await tx.query(`INSERT INTO ai_drafts (id, tenant_id, case_id, referral_id, kind, engine, status, content, created_by) VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8)`, [
     id, actor.tenantId, b.caseId ?? null, b.referralId ?? null, b.kind, engine, JSON.stringify(stored), actor.id,
   ]);
@@ -237,11 +216,11 @@ export async function generateDraft(tx: Db, actor: Actor, b: z.infer<typeof gene
     for (const sen of sec.sentences) {
       si++;
       for (const fid of sen.factIds) {
-        const f = built.fb.facts.find((x) => x.id === fid)!;
+        const f = built.facts.find((x) => x.id === fid)!;
         await tx.query(`INSERT INTO ai_source_references (id, tenant_id, draft_id, sentence_index, source_type, source_id, field) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [newId("asr"), actor.tenantId, id, si, f.sourceType, f.sourceId, f.field]);
       }
     }
-  await audit(tx, actor, "ai.generate", { type: "ai_draft", id }, "success", { kind: b.kind, engine, facts: built.fb.facts.length });
+  await audit(tx, actor, "ai.generate", { type: "ai_draft", id }, "success", { kind: b.kind, engine, facts: built.facts.length });
   return { id, engine, ...stored };
 }
 
