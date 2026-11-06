@@ -9,10 +9,12 @@
 |---|---|
 | 실제 AI Intelligence 연결 | **없음.** 서버 URL·토큰·네트워크 경로 없음. 운영 환경변수 변경 없음 |
 | 외부 LLM 호출 | **비활성.** `llmAvailable()` = false, 외부 API 호출 코드 제거 |
-| `/api/ai/drafts` | 규칙 엔진만 사용(동작 변경 없음) |
-| Provider 어댑터(`lib/server/ai/provider.ts`) | 구현, 모의 AI 서비스로 테스트. **어떤 라우트에도 연결하지 않음** |
-| 비동기 작업 큐(`ai_jobs`, `lib/server/ai/jobs.ts`) | 마이그레이션 `005_ai_jobs` + 서비스 + 테스트. **라우트·워커·스케줄러에 연결하지 않음. 운영 DB에 적용하지 않음** |
-| UI | 변경 없음. 아래 §8은 향후 계약 문서일 뿐 |
+| `/api/ai/drafts` | 규칙 엔진만 사용(동작 변경 없음). 규칙 초안이 비교 그룹의 기준이 됩니다 |
+| Provider 어댑터(`lib/server/ai/provider.ts`) | 구현. 모의 Provider, 계약 스텁, v1.1 프로토타입(합성 데이터)으로 검증 |
+| 비동기 작업 큐(`ai_jobs`) | 마이그레이션 `005` + 요청·상태·취소 API. **기관 AI 스위치(`ai_enabled`, 기본 꺼짐)가 켜져 있을 때만 요청 가능** |
+| 초안 검토 Workflow | 마이그레이션 `006` + 비교·선택·보류 API + UI(§8) |
+| 워커(`lib/server/ai/worker.ts`, `scripts/ai-worker.mts`) | 구현·테스트. **배포·스케줄 등록 없음**(운영 준비는 `docs/AI_PRODUCTION_READINESS.md`) |
+| 운영 DB | 마이그레이션 005·006을 **적용하지 않음**(테스트용 메모리 DB와 로컬 PostgreSQL에서만 확인) |
 
 ## 2. 구성
 
@@ -24,12 +26,18 @@
 | `lib/server/ai/jobs.ts` | 비동기 작업: 생성·선점·실행·취소·상태 조회 |
 | `lib/server/services/ai.ts` | `buildDraft()`(권한 확인 + 사실 + 규칙 초안, 네트워크 없음), `generateDraft()`(규칙만), `assertDraftReview()`(승인·폐기·AI 요청 권한) |
 | `lib/server/db/migrations/005_ai_jobs.ts` | `ai_jobs` 테이블·RLS, `ai_drafts.engine` 확장, `ai_drafts.source_job_id` |
+| `lib/server/db/migrations/006_ai_draft_review.ts` | 초안 그룹(`draft_group_id`), 선택 상태, 그룹당 선택·승인 1개, 대상 1개 제약, `source_job_id` FK |
+| `lib/server/services/ai-review.ts`, `lib/domain/draft-compare.ts` | 그룹 조회·비교·선택·보류 |
+| `lib/server/ai/worker.ts`, `scripts/ai-worker.mts` | 내부 워커(선점·임대·graceful shutdown·헬스) |
+| `lib/server/ai/metrics.ts` | 관리자용 AI 운영 지표(내용 없음) |
 
 ## 3. 개인정보 필터링
 
 - **기본 거부.** 허용 목록에 있는 시스템 생성 값과, 통제 어휘에 정확히 일치하는 값만 보냅니다.
 - 자유 서술은 보내지 않습니다. 대상은 평가 항목 메모, 주거환경, 누락 항목, 사회복지사 소견입니다.
 - 식별자 패턴(전화번호, 주민번호 형태 등)이 보이면 허용 목록에 있어도 제외합니다.
+- **데이터 등급:** 테넌트와(사례 초안이면) 대상자가 모두 `is_synthetic`일 때만 보냅니다. 그 밖에는 네트워크 호출 전에 차단합니다(`real_data_blocked`).
+- **실행 시점 재구성:** 작업을 실행할 때 요청자 권한으로 FactBook을 다시 만듭니다. 따라서 그 사이 바뀐 권한과 동의 상태가 반영되고, 권한을 잃었으면 실패합니다(`requester_not_permitted`).
 - 정규식만으로 개인정보가 완전히 제거된다고 가정하지 않습니다. 그래서 "무엇을 지울지"가 아니라 "무엇만 보낼지"로 설계했습니다.
 - AI가 인용한 근거는 **이번 요청에 실제로 포함된 사실**이어야 합니다. 그렇지 않으면 그 문장을 버립니다.
 - 작업 큐(`ai_jobs`)와 감사 로그에는 다음을 저장하지 않습니다. 실패 메시지는 코드별로 미리 정한 문장만 씁니다.
@@ -51,7 +59,9 @@
 
 ## 5. 승인·폐기 권한
 
-검토(`reviewDraft`)와 AI 작업 요청·취소는 같은 규칙(`DRAFT_REVIEW_RULES`)을 씁니다.
+승인·폐기(`reviewDraft`), 선택·보류, AI 작업 요청·취소는 같은 쓰기 규칙(`DRAFT_REVIEW_RULES`)을 씁니다. 비교 화면 조회와 작업 상태 조회는 읽기 권한입니다.
+
+**초안의 대상은 하나뿐입니다.** 연계 요약은 `referralId`만, 그 밖의 종류는 `caseId`만 가집니다. 이것을 API, 권한 검사, DB 제약 세 곳에서 확인합니다. PR 자체 리뷰에서 High로 분류해 수정했습니다. 수정 전에는 두 id를 함께 넣어 사례 쓰기 권한으로 연계 초안을 승인할 수 있었습니다.
 
 | 대상 | 필요 권한 | 판정 |
 |---|---|---|
@@ -73,9 +83,9 @@
 
 - **목적:** 규칙 초안이 이미 만들어진 뒤, 그 초안에 대한 **AI 제안본**을 백그라운드에서 만듭니다.
 - **이유:** 로컬 모델 실측이 75–174초라서, 요청 트랜잭션 안에서 기다릴 수 없습니다.
-- **현재 범위:** 테이블, 서비스 함수, 테스트까지만 있습니다.
-  - 이를 호출하는 API 라우트, 워커 프로세스, 스케줄러(cron)는 없습니다.
-  - 따라서 운영에서 작업이 생성되거나 실행되는 일은 없습니다.
+- **현재 범위:** 테이블, 서비스, 요청·상태·취소 API, 내부 워커, 테스트가 있습니다.
+  - 기관 AI 스위치가 꺼져 있으면(기본) 요청이 거부됩니다(409).
+  - 워커는 배포·스케줄되지 않았습니다. 따라서 운영에서 작업이 실행되는 일은 없습니다.
 
 ### 6.2 테이블
 
@@ -130,6 +140,10 @@ RLS는 다른 테넌트 테이블과 같은 패턴입니다.
   │         │   └──── 재시도 불가 오류 / 시도 소진 / 임대 만료+시도 소진 / job timeout ──▶ failed
   │         └──────── AI 초안 검증 통과 ──▶ completed (새 ai_drafts 행, status 'draft')
   └── cancel ──▶ cancelled   (processing 중 취소해도 같음. 늦게 온 결과는 저장하지 않음)
+
+  processing ── circuit open ──▶ pending (시도 환불, 30초 후)      [ai.job.defer]
+  processing ── 워커 종료 ──────▶ pending (시도 환불, 즉시)        [ai.job.release]
+  pending/processing ── 생성 후 24시간 초과 ──▶ failed(job_expired)
 ```
 
 - 종료 상태는 `completed`, `failed`, `cancelled`입니다.
@@ -141,7 +155,7 @@ RLS는 다른 테넌트 테이블과 같은 패턴입니다.
 |---|---|---|
 | enqueue | 요청 트랜잭션(`route()` 안) | 초안 `FOR UPDATE` → 권한 확인 → 같은 키나 활성 작업이 있으면 그것을 반환 → INSERT → 감사 기록 |
 | claim | 짧은 `withTenant` | 시도 소진+임대 만료 작업은 `failed`로 바꿈. 이어서 `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED) RETURNING` |
-| run 1 | 짧은 `withTenant` | 임대 소유 확인(아니면 `stale` 기록, **AI 호출 안 함**) → 저장된 사실과 규칙 섹션 읽기 |
+| run 1 | 짧은 `withTenant` | 임대 확인(소유자 + 시도 번호, 아니면 `stale` 기록, **AI 호출 안 함**) → 기한, 기관 스위치, 그룹 승인 여부, 요청자 쓰기 권한 확인 → 요청자 권한으로 FactBook 재구성 → 데이터 등급 판정 |
 | run 2 | **트랜잭션 없음** | `composeDraft` + job timeout(`Promise.race`, 기본 300초) |
 | run 3 | 짧은 `withTenant` | 작업 `FOR UPDATE`. 여전히 `processing`이고 내 임대이며 원본이 미검토 규칙 초안이어야 저장. 아니면 `stale`로 기록하고 결과를 버림 |
 
@@ -160,7 +174,7 @@ RLS는 다른 테넌트 테이블과 같은 패턴입니다.
 | 작업 큐 | 다시 예약하는 오류는 **`network`, `unavailable`(재시도 후에도 503)뿐**입니다. 백오프는 30초·60초·120초…, 최대 10분입니다. 그 외(`timeout`, `server_error`(500 등), 4xx, `invalid_response`, 근거 검증 실패, `circuit_open`)는 바로 `failed`가 됩니다 |
 | job timeout | `runJob`의 `jobTimeoutMs`(기본 300초)를 넘으면 `job_timeout`으로 실패합니다. 늦게 도착한 응답은 무시합니다 |
 | 임대 | `leaseSeconds`(기본 600초)가 지나면 다른 워커가 이어받습니다. 마지막 시도에서 만료되면 `lease_expired`로 실패합니다 |
-| 서킷 브레이커 | 연속 3회 실패하면 30초간 호출을 차단합니다(`circuit_open`). **프로세스 메모리 상태**라서 워커 인스턴스마다 따로 동작합니다 |
+| 서킷 브레이커 | 연속 3회 실패하면 30초간 호출을 차단합니다. half-open에서는 시험 호출 1회만 허용합니다. 차단 중인 작업은 실패시키지 않고 **연기**합니다(시도 환불, 최대 24시간). AI 서비스 장애는 모든 기관에 같으므로 Provider 인스턴스 단위로 공유하며, **프로세스 메모리 상태**라서 워커 인스턴스마다 따로 동작합니다 |
 
 ### 6.6 폴백
 
@@ -180,6 +194,11 @@ AI 경로가 실패해도 규칙 초안은 늘 그대로 있고 승인할 수 �
 | `ai.job.fail` | 시스템 | `code`, `attempt`, `exhausted` |
 | `ai.job.cancel` | 취소자 | `from` |
 | `ai.job.stale` | 시스템 | `status`, `phase`(`before_call`/`after_call`) |
+| `ai.job.defer` | 시스템 | `code`(`circuit_open`) |
+| `ai.job.release` | 시스템 | `reason`(`worker_shutdown`) |
+| `ai.select` | 선택자 | `group`, `engine`, `previous` |
+| `ai.hold` | 보류자 | `group`, `previous` |
+| `ai.approve` / `ai.discard` | 승인·폐기자 | 기존 항목 + `group` |
 
 모든 행에는 `entity_type='ai_job'`, 작업 id, 시간이 기록됩니다. meta에는 본문, 사실 텍스트, 토큰을 넣지 않습니다.
 
@@ -191,59 +210,76 @@ AI 경로가 실패해도 규칙 초안은 늘 그대로 있고 승인할 수 �
 - 다른 테넌트 컨텍스트에서 SELECT/UPDATE하면 0행입니다. 교차 테넌트 INSERT는 RLS가 거부합니다.
 - Provider 토큰은 테넌트별입니다. 토큰이 없는 테넌트는 다른 기관의 토큰을 빌리지 않습니다.
 
-## 8. 향후 UI·API 계약 (미구현, 활성화하지 않음)
+## 8. 초안 검토 Workflow (구현)
 
-다음은 예정된 엔드포인트입니다. 모두 `route()`를 거치며, CSRF·세션·테넌트 검사는 기존과 같습니다.
+### 8.1 개념
 
-| 메서드 | 경로 | 서비스 | 권한 |
-|---|---|---|---|
-| POST | `/api/ai/drafts/{id}/ai-jobs` (헤더 `Idempotency-Key`) | `enqueueDraftJob` | 초안 쓰기 |
-| GET | `/api/ai/jobs/{jobId}` | `getJobStatus` | 초안 조회 |
-| POST | `/api/ai/jobs/{jobId}/cancel` | `cancelJob` | 초안 쓰기 |
+| 개념 | 저장 위치(중복 컬럼 없음) |
+|---|---|
+| 초안 그룹 | `ai_drafts.draft_group_id`. 규칙 초안 id가 그룹 id이고, AI 초안은 원본 규칙 초안의 그룹에 들어갑니다 |
+| 생성 방식(source_type) | 기존 `engine`(`rules` = rule_based, `ai-intelligence`/`hybrid` = ai) |
+| 선택 | `selection_status`(`candidate`/`selected`/`set_aside`), `selected_by`, `selected_at` |
+| 폐기 | 기존 `status = 'discarded'` + `reviewed_by/at` |
+| 승인 | 기존 `status = 'approved'` + `reviewed_by/at` |
 
-`getJobStatus`가 돌려주는 값은 다음과 같습니다. 본문과 사실은 포함하지 않습니다.
+### 8.2 흐름
 
-```ts
-{
-  id, status,                       // pending | processing | completed | failed | cancelled
-  engine,                           // null | "hybrid" | "ai-intelligence"
-  attempts, maxAttempts,
-  retryable,                        // 큐가 스스로 다시 시도할 예정인지
-  canRequestAgain,                  // 실패·취소 후 사람이 다시 요청할 수 있는지
-  error: { code, message } | null,  // 고정된 안전 문구
-  modelVersion, promptVersion,
-  sourceDraftId,                    // 규칙 초안
-  resultDraftId,                    // AI 제안 초안 (출처는 기존 초안 조회 API의 sources로)
-  resultReviewStatus,               // null | draft | approved | discarded  (사람 승인 상태)
-  createdAt, startedAt, completedAt, failedAt, cancelledAt,
-}
-```
+1. 담당자가 규칙 초안을 생성합니다(기존 기능).
+2. 기관 스위치가 켜져 있으면 **AI 초안 요청**을 할 수 있습니다(`Idempotency-Key` 필수).
+3. 워커가 비동기로 처리해 AI 초안을 같은 그룹에 `draft`로 저장합니다.
+4. 비교 화면에서 두 초안을 나란히 보고, 문장별 근거를 확인합니다.
+5. 다음 중 하나를 고릅니다.
+   - **규칙 초안 선택**, 또는 **AI 초안 선택**: 선택하지 않은 초안은 보관(`set_aside`)됩니다.
+   - **AI 초안 폐기**
+   - **보류**: 모든 초안을 후보로 되돌립니다.
+6. **선택은 승인이 아닙니다.** 선택된 초안만 기존 승인 화면에서 확인 체크 후 승인할 수 있습니다.
+   - 사례 초안은 승인할 때만 `case_records`(공식 기록)에 저장됩니다.
+7. AI 작업이 실패해도 규칙 초안은 그대로 있고, 혼자 남은 초안은 기존처럼 바로 승인할 수 있습니다.
 
-UI 원칙은 다음과 같습니다.
+### 8.3 무결성
 
-- 규칙 초안을 먼저 보여 줍니다.
-- AI 제안본은 "AI 제안 · 검토 필요"로 구분해 표시합니다.
-- 섹션별 엔진(`content.ai.sectionEngines`)을 표시합니다.
-- 실패하면 `error.message`를 보여 주고 규칙 초안을 그대로 둡니다.
+- 그룹당 선택은 1개, 승인도 1개입니다(부분 유니크 인덱스).
+- 승인된 초안은 반드시 선택된 상태입니다. 폐기된 초안은 선택된 상태일 수 없습니다(CHECK).
+- 승인된 그룹에서는 선택, 보류, 다른 초안 승인, 새 AI 요청을 모두 거부합니다(409).
+- 승인·폐기·선택·보류는 그룹의 모든 행을 id 순서로 `FOR UPDATE` 잠급니다. 동시에 요청해도 일관된 결과가 나오고 교착이 없습니다.
+- 다른 기관은 404, 지역 밖도 404입니다. 지역 안이지만 읽기만 가능한 사용자는 비교 화면은 볼 수 있고(`canReview: false`) 선택은 403입니다.
 
-## 9. 운영 연결 전에 남은 작업 (승인 필요)
+### 8.4 API (모두 `route()`: CSRF, 세션, 테넌트 트랜잭션, 거부 감사)
 
-| # | 작업 | 비고 |
+| 메서드 | 경로 | 권한 |
 |---|---|---|
-| 1 | 워커 실행 방식 결정 | Vercel cron + `runWorkerOnce` 또는 별도 상시 워커. 서버리스 실행 시간 한도와 job timeout·임대 시간 정합 |
-| 2 | 테넌트 열거 방식 | 워커가 처리할 테넌트 목록. 소유자 연결로 id만 조회하거나, 테넌트별 설정에서 가져옴 |
-| 3 | `tenant_settings.ai_provider`(기본 `rules`) | 기관별 단계적 활성화 |
-| 4 | 비밀·네트워크 | 테넌트별 토큰 저장(KMS/환경변수), AI 서버 URL, 서버리스에서 내부망으로 가는 경로 |
-| 5 | 위 §8 API·UI 구현 | 별도 리뷰 |
-| 6 | 운영 DB에 `005_ai_jobs` 적용 | 스테이징 먼저. 롤백 조건(§6.2) 확인 |
-| 7 | 오래된 작업 정리 정책 | 앱 역할에 DELETE가 없으므로 보존 기간과 아카이브를 운영 작업으로 정의 |
-| 8 | 분산 서킷 브레이커·요율 제한 | 현재는 프로세스 단위 |
-| 9 | 관리자 화면 문구 | "외부 LLM 사용 허용(AI_FEATURE_ENABLED 필요)"은 실제 동작과 다름 |
-| 10 | 개인정보 영향평가, 위탁·국외 이전 검토 | 자유 서술 전송은 계속 금지 |
+| GET | `/api/ai/drafts/{id}/compare` | 대상 읽기 |
+| POST | `/api/ai/drafts/{id}/select` `{action: select \| hold}` | 대상 쓰기 |
+| POST | `/api/ai/drafts/{id}/review` `{action: approve \| discard}`(기존) | 대상 쓰기 |
+| POST | `/api/ai/drafts/{id}/ai-jobs` (헤더 `Idempotency-Key`) | 대상 쓰기 + 기관 스위치 |
+| GET | `/api/ai/jobs/{jobId}` | 대상 읽기 |
+| POST | `/api/ai/jobs/{jobId}/cancel` | 대상 쓰기 |
+| GET | `/api/admin/ai-metrics?days=N` | 기관 관리자 |
+
+작업 상태 응답은 다음과 같습니다(본문과 사실 없음).
+
+`{ id, status, engine, attempts, maxAttempts, retryable, canRequestAgain, error{code,message}, modelVersion, promptVersion, sourceDraftId, resultDraftId, resultReviewStatus, requestedAt, startedAt, completedAt, failedAt, cancelledAt, nextAttemptAt }`
+
+### 8.5 UI (`components/client/AiDraftPanel.tsx`, 기존 디자인 클래스 사용)
+
+- **작업 상태 줄:** 대기, 처리 중, 완료, 실패, 취소를 표시합니다. 요청 시각, 시도 수, 생성 방식, 안전 오류 문구, 자동 재시도 예정, 다시 요청, 요청 취소도 보여 줍니다. 진행 중에는 15초마다 새로고침합니다.
+- **비교:** 왼쪽은 규칙 초안, 오른쪽은 AI 초안입니다.
+  - 섹션별로 문장 표시를 붙입니다(동일 / AI에만 있음 / 규칙에만 있음).
+  - AI 섹션이 비어 규칙 문장을 유지했으면 "규칙 문장 유지"로 표시합니다.
+  - 생성 시각, 모델, 프롬프트 버전을 보여 줍니다.
+- **근거:** 문장의 근거 버튼을 누르면 사실 ID, 내용, 출처(`source_type:id·field`), 수집 시각이 펼쳐집니다. 근거 검증은 서버가 AI 초안을 저장할 때 이미 했습니다. UI는 이를 대신하지 않습니다.
+- **선택:** 규칙 초안 선택, AI 초안 선택, AI 초안 폐기, 보류(나중에 비교) 버튼이 있습니다.
+- **승인:** 선택된 초안의 수정본을 보여 줍니다. "근거와 내용을 확인했습니다" 체크 전에는 승인 버튼이 비활성입니다. 승인 뒤에는 승인자, 시각, 초안 종류를 표시합니다.
+- 브라우저 확인: 1440px·390px에서 가로 넘침 0, axe serious/critical 0(로컬 PostgreSQL + 모의 Provider).
+
+## 9. 운영 연결 전에 남은 작업
+
+`docs/AI_PRODUCTION_READINESS.md`를 참고하세요. 워커 실행 방식 비교와 권고, 기관 설정, 토큰, 모니터링, 보존, v1.1 계약 검증 결과, 체크리스트가 있습니다.
 
 ## 10. 남은 위험
 
-- **의미 왜곡:** 근거 id는 맞지만 내용이 다른 문장은 자동으로 막을 수 없습니다. 사람 승인이 최종 통제입니다.
-- **규칙 초안과 AI 초안이 둘 다 `draft`로 공존:** 한쪽을 승인해도 다른 쪽은 자동으로 폐기되지 않습니다. 검토자가 하나를 고르고 나머지를 폐기하는 UI가 필요합니다.
-- **`source_job_id`:** 복합 FK가 없는 참조 컬럼입니다. 무결성은 `ai_jobs.result_draft_id`(복합 FK)로 보장합니다.
-- **`enqueue`의 쓰기 권한 기준:** "승인 권한"과 같은 기준을 씁니다. 별도의 "AI 사용 허용" 권한은 만들지 않았습니다. 필요하면 정책 결정이 있어야 합니다.
+- **의미 왜곡:** 근거 id는 맞지만 내용이 다른 문장은 자동으로 막을 수 없습니다. 사람 승인이 최종 통제입니다. 비교 화면과 확인 체크가 이를 돕습니다.
+- **AI 초안 FactBook:** 실행 시점에 다시 만들기 때문에, 그 사이 기록이 바뀌면 규칙 초안과 사실 번호가 다를 수 있습니다. 각 문장의 근거는 그 초안의 사실 목록을 기준으로 표시합니다.
+- **`ai_drafts_one_target`:** 기존 운영 데이터를 깨지 않으려고 `NOT VALID`로 추가했습니다. 운영 적용 전에 데이터를 점검하고 `VALIDATE`해야 합니다.
+- **서킷 브레이커와 요율 제한:** 프로세스 단위입니다. 워커가 여러 대이면 대수만큼 시험 호출이 생깁니다.
+- **LLM `status: ok` 경로:** 실제 모델로 다시 검증해야 합니다(이번에는 스텁과 모의 Provider만 사용).
