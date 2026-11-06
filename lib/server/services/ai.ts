@@ -1,13 +1,13 @@
 /**
  * Administrative AI assistance (3 functions). Default engine is rule-based
- * and runs entirely on the server with no external calls. An LLM engine is
- * used only when AI_FEATURE_ENABLED=true, ANTHROPIC_API_KEY is set and the
- * tenant enabled AI — and even then only de-identified fact strings are sent.
+ * and runs entirely on the server with no external calls. External LLM
+ * inference is disabled pending the dedicated AI Intelligence adapter's
+ * tenant, privacy, and evidence-validation integration tests.
  * All outputs are saved as `draft` and need human approval.
  */
 import { z } from "zod";
 import { ANSWER_STATUS_LABEL, ASSESSMENT_DOMAIN_LABEL, SERVICE_REFERRAL_STATUS_LABEL, SERVICE_TYPE_LABEL, TASK_TYPE_LABEL, type AnswerStatus, type AssessmentDomain, type ServiceType } from "../../domain/enums";
-import { draftSchema, renderDraft, verifyDraft, type DraftContent, type Fact } from "../../domain/ai-draft";
+import { renderDraft, verifyDraft, type DraftContent, type Fact } from "../../domain/ai-draft";
 import { matchProviders } from "../../domain/matching";
 import type { Actor } from "../auth/session";
 import { audit } from "../audit";
@@ -16,13 +16,21 @@ import type { Db } from "../db/client";
 import { newId } from "../db/ids";
 import { conflict, forbidden, invalid, notFound } from "../errors";
 import { rateLimit } from "../http";
-import { getReferral } from "./referrals";
+import { assertReferralWrite, getReferral } from "./referrals";
 
 export type DraftKind = "referral_summary" | "social_opinion" | "meeting_brief";
 
-export function llmAvailable(tenantAiEnabled: boolean) {
-  return process.env.AI_FEATURE_ENABLED === "true" && Boolean(process.env.ANTHROPIC_API_KEY) && tenantAiEnabled;
+/**
+ * External LLM calls are deliberately disabled until the dedicated Neulgyeot
+ * AI Intelligence provider adapter is integrated and its tenant-scoped
+ * security contract is verified. Keep the rule engine as the safe fallback.
+ */
+export function llmAvailable(_tenantAiEnabled: boolean) {
+  return false;
 }
+
+/** Presence indicator used instead of the note text (see referralFacts). */
+export const SOCIAL_WORKER_NOTE_PRESENT = "병원 사회복지사 소견 첨부됨 (원문은 연계 상세 화면에서 권한자만 확인)";
 
 class FactBook {
   facts: Fact[] = [];
@@ -45,7 +53,10 @@ async function referralFacts(tx: Db, actor: Actor, referralId: string) {
     housing: p.livingNeeds?.housingType ? fb.add(`주거 형태: ${p.livingNeeds.housingType}`, "referral_payload", vId, "livingNeeds.housingType") : null,
     barriers: p.livingNeeds?.barriers?.length ? fb.add(`주거 장애요인: ${p.livingNeeds.barriers.join(", ")}`, "referral_payload", vId, "livingNeeds.barriers") : null,
     services: p.livingNeeds?.requestedServices?.length ? fb.add(`요청 서비스: ${p.livingNeeds.requestedServices.join(", ")}`, "referral_payload", vId, "livingNeeds.requestedServices") : null,
-    note: p.livingNeeds?.socialWorkerNote ? fb.add(`병원 사회복지사 소견: ${p.livingNeeds.socialWorkerNote}`, "referral_payload", vId, "livingNeeds.socialWorkerNote") : null,
+    // The social worker's note is free text that may contain identifiers. Rule drafts only need to know
+    // that it exists, so the fact records PRESENCE only — the note text never enters the FactBook, the stored
+    // draft or the API response. AI providers never receive this fact either (fact-policy NEVER_SEND).
+    note: p.livingNeeds?.socialWorkerNote?.trim() ? fb.add(SOCIAL_WORKER_NOTE_PRESENT, "referral_payload", vId, "livingNeeds.socialWorkerNote") : null,
     kadl: null as string | null,
     cognition: null as string | null,
   };
@@ -164,41 +175,28 @@ async function ruleMeetingBrief(tx: Db, actor: Actor, caseId: string) {
   return { fb, content };
 }
 
-/* ------------------------------ optional LLM ------------------------------ */
-async function llmRewrite(kind: DraftKind, facts: Fact[], skeleton: DraftContent): Promise<DraftContent | null> {
-  const factList = facts.map((f) => `${f.id}: ${f.text}`).join("\n");
-  const prompt = `당신은 지역사회 통합돌봄 담당 공무원의 문서 작성 보조자입니다. 아래 사실(F번호)만 사용해 '${kind}' 검토용 초안을 작성하세요.
-규칙: 사실에 없는 내용 추측 금지, 복지 자격·긴급성·위험도 판단 금지, 진단·예후 작성 금지, 낙인 표현 금지, 객관적 공공행정 문체.
-모든 문장은 근거 F번호를 factIds에 1개 이상 포함해야 합니다. 섹션 제목은 다음을 유지: ${skeleton.sections.map((s) => s.title).join(" / ")}
-JSON만 출력: {"sections":[{"title":"...","sentences":[{"text":"...","factIds":["F1"]}]}]}
-사실:
-${factList}`;
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: process.env.AI_MODEL ?? "claude-sonnet-4-5", max_tokens: 1500, messages: [{ role: "user", content: prompt }] }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { content?: { type: string; text?: string }[] };
-    const text = data.content?.find((c) => c.type === "text")?.text ?? "";
-    const m = text.match(/\{[\s\S]*\}/);
-    if (!m) return null;
-    const parsed = draftSchema.safeParse(JSON.parse(m[0]));
-    if (!parsed.success) return null;
-    return verifyDraft(parsed.data, facts).ok ? parsed.data : null;
-  } catch {
-    return null;
-  }
-}
+/* ------------------------------ AI providers ------------------------------ */
+// The former direct call to an external LLM API (llmRewrite) was removed: it was unreachable because
+// llmAvailable() returns false, and it sent unescaped fact text to an external service. AI proposals now go
+// through lib/server/ai/provider.ts (local AI Intelligence, tenant-scoped tokens, allowlisted facts only),
+// which is not wired into this route yet. See docs/AI_PROVIDER_INTEGRATION.md.
 
 /* ------------------------------ public API ------------------------------ */
-export const generateBody = z.object({ kind: z.enum(["referral_summary", "social_opinion", "meeting_brief"]), caseId: z.string().optional(), referralId: z.string().optional() });
+/** A draft has exactly ONE target, fixed by its kind: referral_summary → referralId only; the others → caseId only.
+ * Allowing both let a user attach a case they can write to a referral they can only read (and so approve it). */
+export const generateBody = z
+  .object({ kind: z.enum(["referral_summary", "social_opinion", "meeting_brief"]), caseId: z.string().min(1).optional(), referralId: z.string().min(1).optional() })
+  .refine((b) => (b.kind === "referral_summary" ? Boolean(b.referralId) && !b.caseId : Boolean(b.caseId) && !b.referralId), {
+    message: "초안 종류에 맞는 대상 하나만 지정해야 합니다 (연계 요약: referralId, 그 외: caseId).",
+  });
 
-export async function generateDraft(tx: Db, actor: Actor, b: z.infer<typeof generateBody>) {
+/**
+ * Gathers facts (with the actor's read authorisation) and builds the rule draft. Pure DB reads, no network.
+ * Exported so a provider-based flow can run it in a short transaction and call the AI provider outside it.
+ */
+export async function buildDraft(tx: Db, actor: Actor, b: z.infer<typeof generateBody>): Promise<{ facts: Fact[]; content: DraftContent }> {
   if (!isStaff(actor)) throw forbidden();
-  rateLimit(`ai:${actor.id}`, 20, 60_000);
+  if (b.caseId && b.referralId) throw invalid("초안 대상은 하나만 지정할 수 있습니다.");
   let built: { fb: FactBook; content: DraftContent };
   if (b.kind === "referral_summary") {
     if (!b.referralId) throw invalid("referralId가 필요합니다.");
@@ -207,34 +205,34 @@ export async function generateDraft(tx: Db, actor: Actor, b: z.infer<typeof gene
     if (!b.caseId) throw invalid("caseId가 필요합니다.");
     built = b.kind === "social_opinion" ? await ruleSocialOpinion(tx, actor, b.caseId) : await ruleMeetingBrief(tx, actor, b.caseId);
   }
-  // Drop empty sections' sentences gracefully but keep headings for structure.
-  let content = built.content;
-  let engine: "rules" | "llm" = "rules";
-  const [s] = await tx.query<{ ai_enabled: boolean }>(`SELECT ai_enabled FROM tenant_settings WHERE tenant_id = $1`, [actor.tenantId]);
-  if (llmAvailable(Boolean(s?.ai_enabled))) {
-    const out = await llmRewrite(b.kind, built.fb.facts, content);
-    if (out) {
-      content = out;
-      engine = "llm";
-    }
-  }
-  const check = verifyDraft(content, built.fb.facts);
+  return { facts: built.fb.facts, content: built.content };
+}
+
+export async function generateDraft(tx: Db, actor: Actor, b: z.infer<typeof generateBody>) {
+  if (!isStaff(actor)) throw forbidden();
+  rateLimit(`ai:${actor.id}`, 20, 60_000);
+  const built = await buildDraft(tx, actor, b);
+  // Rule engine only: external/remote inference stays disabled in this route (llmAvailable() === false).
+  const content = built.content;
+  const engine = "rules" as const;
+  const check = verifyDraft(content, built.facts);
   if (!check.ok) throw invalid("초안 검증에 실패했습니다.", { problems: check.problems });
   const id = newId("aid");
-  const stored = { ...content, facts: built.fb.facts, text: renderDraft(content) };
-  await tx.query(`INSERT INTO ai_drafts (id, tenant_id, case_id, referral_id, kind, engine, status, content, created_by) VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8)`, [
-    id, actor.tenantId, b.caseId ?? null, b.referralId ?? null, b.kind, engine, JSON.stringify(stored), actor.id,
+  const stored = { ...content, facts: built.facts, text: renderDraft(content) };
+  // a rule draft is the root of its own review group (AI proposals made from it join this group)
+  await tx.query(`INSERT INTO ai_drafts (id, tenant_id, case_id, referral_id, kind, engine, status, content, created_by, draft_group_id) VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8,$1)`, [
+    id, actor.tenantId, b.kind === "referral_summary" ? null : b.caseId!, b.kind === "referral_summary" ? b.referralId! : null, b.kind, engine, JSON.stringify(stored), actor.id,
   ]);
   let si = 0;
   for (const sec of content.sections)
     for (const sen of sec.sentences) {
       si++;
       for (const fid of sen.factIds) {
-        const f = built.fb.facts.find((x) => x.id === fid)!;
+        const f = built.facts.find((x) => x.id === fid)!;
         await tx.query(`INSERT INTO ai_source_references (id, tenant_id, draft_id, sentence_index, source_type, source_id, field) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [newId("asr"), actor.tenantId, id, si, f.sourceType, f.sourceId, f.field]);
       }
     }
-  await audit(tx, actor, "ai.generate", { type: "ai_draft", id }, "success", { kind: b.kind, engine, facts: built.fb.facts.length });
+  await audit(tx, actor, "ai.generate", { type: "ai_draft", id }, "success", { kind: b.kind, engine, facts: built.facts.length });
   return { id, engine, ...stored };
 }
 
@@ -243,7 +241,7 @@ export async function listDrafts(tx: Db, actor: Actor, target: { caseId?: string
   else if (target.referralId) await getReferral(tx, actor, target.referralId);
   else throw invalid("대상이 필요합니다.");
   return tx.query(
-    `SELECT d.id, d.kind, d.engine, d.status, d.content, d.edited_text, d.created_at, d.reviewed_at, u.display_name AS creator, ru.display_name AS reviewer
+    `SELECT d.id, d.kind, d.engine, d.status, d.content, d.edited_text, d.created_at, d.reviewed_at, d.draft_group_id, d.selection_status, d.selected_at, d.source_job_id, u.display_name AS creator, ru.display_name AS reviewer
        FROM ai_drafts d JOIN users u ON u.id = d.created_by LEFT JOIN users ru ON ru.id = d.reviewed_by
       WHERE ${target.caseId ? "d.case_id = $1" : "d.referral_id = $1"} ORDER BY d.created_at DESC LIMIT 20`,
     [target.caseId ?? target.referralId],
@@ -252,18 +250,62 @@ export async function listDrafts(tx: Db, actor: Actor, target: { caseId?: string
 
 export const reviewBody = z.object({ action: z.enum(["approve", "discard"]), editedText: z.string().trim().min(10).max(6000).optional(), saveAsRecord: z.boolean().default(false) });
 
+/**
+ * Explicit permission check for reviewing an AI draft. Reading a draft is NOT enough to approve or discard it.
+ *   approve / discard a case draft     → assertCaseWrite   (municipal admin, or a case manager assigned to the case)
+ *   approve / discard a referral draft → assertReferralWrite (municipal admin, or the case manager assigned to the referral)
+ * Both actions currently map to the same write rule; they are separate entries so they can diverge later
+ * (e.g. allowing the author to discard) without touching callers. Other tenants: RLS hides the draft (404).
+ */
+export const DRAFT_REVIEW_RULES = {
+  approve: { case: "case.write", referral: "referral.write" },
+  discard: { case: "case.write", referral: "referral.write" },
+} as const;
+
+export async function assertDraftReview(tx: Db, actor: Actor, d: { case_id: string | null; referral_id: string | null; kind?: string }, action: "approve" | "discard") {
+  if (!isStaff(actor)) throw notFound("초안");
+  // exactly one target, and it must be the one the kind implies — a draft carrying both is never reviewable
+  if ((d.case_id && d.referral_id) || (!d.case_id && !d.referral_id)) throw notFound("초안");
+  if (d.kind && (d.kind === "referral_summary") !== Boolean(d.referral_id)) throw notFound("초안");
+  const rule = DRAFT_REVIEW_RULES[action];
+  if (d.case_id && rule.case === "case.write") return assertCaseWrite(tx, actor, d.case_id);
+  if (d.referral_id && rule.referral === "referral.write") return assertReferralWrite(tx, actor, d.referral_id);
+  throw notFound("초안");
+}
+
 export async function reviewDraft(tx: Db, actor: Actor, draftId: string, b: z.infer<typeof reviewBody>) {
-  const [d] = await tx.query<{ case_id: string | null; referral_id: string | null; status: string; content: { text: string }; kind: DraftKind }>(`SELECT case_id, referral_id, status, content, kind FROM ai_drafts WHERE id = $1 FOR UPDATE`, [draftId]);
+  const [d] = await tx.query<{ case_id: string | null; referral_id: string | null; status: string; content: { text: string }; kind: DraftKind; draft_group_id: string; selection_status: string }>(
+    `SELECT case_id, referral_id, status, content, kind, draft_group_id, selection_status FROM ai_drafts WHERE id = $1`, [draftId]);
   if (!d) throw notFound("초안");
-  if (d.case_id) await assertCaseWrite(tx, actor, d.case_id);
-  else if (d.referral_id) await getReferral(tx, actor, d.referral_id);
-  if (d.status !== "draft") throw conflict("이미 처리된 초안입니다.");
+  await assertDraftReview(tx, actor, d, b.action);
+  // lock the whole group in id order: approve / discard / select on the same group serialise here
+  const lockQ = `SELECT id, status, selection_status FROM ai_drafts WHERE draft_group_id = $1 ORDER BY id FOR UPDATE`;
+  await tx.query(lockQ, [d.draft_group_id]);
+  // second read: sees a sibling committed while we waited for the lock (READ COMMITTED statement snapshot)
+  const group = await tx.query<{ id: string; status: string; selection_status: string }>(lockQ, [d.draft_group_id]);
+  const me = group.find((g) => g.id === draftId)!;
+  if (me.status !== "draft") throw conflict("이미 처리된 초안입니다.");
+  if (b.action === "approve") {
+    if (group.some((g) => g.status === "approved")) throw conflict("이 비교 그룹에는 이미 승인된 초안이 있습니다.");
+    const others = group.filter((g) => g.id !== draftId && g.status === "draft");
+    // with competing drafts, only the SELECTED one may be approved (selection ≠ approval; both are recorded)
+    if (others.length && me.selection_status !== "selected") throw conflict("비교 중인 초안이 있습니다. 사용할 초안을 먼저 선택하세요.");
+    await tx.query(`UPDATE ai_drafts SET selection_status = 'set_aside', selected_by = NULL, selected_at = NULL WHERE draft_group_id = $1 AND id <> $2 AND status = 'draft'`, [d.draft_group_id, draftId]);
+    await tx.query(
+      `UPDATE ai_drafts SET status = 'approved', edited_text = $2, reviewed_by = $3, reviewed_at = now(),
+              selection_status = 'selected', selected_by = COALESCE(selected_by, $3), selected_at = COALESCE(selected_at, now()) WHERE id = $1`,
+      [draftId, b.editedText ?? null, actor.id]);
+  } else {
+    await tx.query(`UPDATE ai_drafts SET status = 'discarded', reviewed_by = $2, reviewed_at = now(), selection_status = 'set_aside', selected_by = NULL, selected_at = NULL WHERE id = $1`, [draftId, actor.id]);
+  }
   const status = b.action === "approve" ? "approved" : "discarded";
-  await tx.query(`UPDATE ai_drafts SET status = $2, edited_text = $3, reviewed_by = $4, reviewed_at = now() WHERE id = $1`, [draftId, status, b.editedText ?? null, actor.id]);
+  // only an APPROVED draft can become an official case record
   if (b.action === "approve" && b.saveAsRecord && d.case_id) {
     const body = `[검토 승인된 ${d.kind === "social_opinion" ? "사회복지 종합 소견" : "회의 자료"} — 담당자 확인]\n${b.editedText ?? d.content.text}`.slice(0, 4000);
     await tx.query(`INSERT INTO case_records (id, tenant_id, case_id, record_type, body, occurred_at, author_id) VALUES ($1,$2,$3,'note',$4,now(),$5)`, [newId("rec"), actor.tenantId, d.case_id, body, actor.id]);
   }
-  await audit(tx, actor, b.action === "approve" ? "ai.approve" : "ai.discard", { type: "ai_draft", id: draftId }, "success", { edited: Boolean(b.editedText) });
+  await audit(tx, actor, b.action === "approve" ? "ai.approve" : "ai.discard", { type: "ai_draft", id: draftId }, "success", {
+    edited: Boolean(b.editedText), target: d.case_id ? "case" : "referral", kind: d.kind, group: d.draft_group_id,
+  });
   return { status };
 }

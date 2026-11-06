@@ -7,7 +7,7 @@ import { fmtDate, fmtDateTime } from "@/lib/format";
 import { withPage } from "@/lib/server/page";
 import { getReferral } from "@/lib/server/services/referrals";
 import { listCaseManagers, listRegions } from "@/lib/server/services/admin";
-import { listDrafts, llmAvailable } from "@/lib/server/services/ai";
+import { listDraftGroups } from "@/lib/server/services/ai-review";
 
 export const metadata = { title: "연계 신청 상세" };
 const RETENTION: Record<string, string> = { untilCaseClosure: "연계 종결 시까지", oneYear: "수신일로부터 1년", threeYears: "수신일로부터 3년" };
@@ -34,13 +34,13 @@ function Payload({ p }: { p: any }) {
 
 export default async function ReferralDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { d, managers, regions, isAdmin, drafts, llm, canAct } = await withPage(async (tx, actor) => {
+  const { d, managers, regions, isAdmin, groups, aiEnabled, canAct } = await withPage(async (tx, actor) => {
     const d = await getReferral(tx, actor, id);
     const [s] = await tx.query<{ ai_enabled: boolean }>(`SELECT ai_enabled FROM tenant_settings WHERE tenant_id = $1`, [actor.tenantId]);
     const isAdmin = actor.roles.includes("municipal_admin");
     return {
       d, isAdmin, managers: await listCaseManagers(tx), regions: (await listRegions(tx)).filter((r) => r.level === "eupmyeondong"),
-      drafts: await listDrafts(tx, actor, { referralId: id }), llm: llmAvailable(Boolean(s?.ai_enabled)),
+      groups: await listDraftGroups(tx, { referralId: id }), aiEnabled: Boolean(s?.ai_enabled), // read access checked by getReferral above
       canAct: isAdmin || (d.referral as any).assigned_user_id === actor.id,
     };
   }, { roles: ["municipal_admin", "case_manager"] });
@@ -98,7 +98,7 @@ export default async function ReferralDetail({ params }: { params: Promise<{ id:
             )}
           </Panel>
           <Panel title="AI 연계 신청 요약 (검토용)" id="ai">
-            <AiDraftPanel target={{ referralId: id }} kinds={["referral_summary"]} drafts={drafts as any} canWrite={canAct} llm={llm} />
+            <AiDraftPanel target={{ referralId: id }} kinds={["referral_summary"]} groups={groups as any} canWrite={canAct} aiEnabled={aiEnabled} />
           </Panel>
         </div>
         <div className="stack">

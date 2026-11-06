@@ -1,10 +1,10 @@
 "use client";
 export type ApiError = { code: string; message: string; details?: unknown };
 
-export async function api<T = unknown>(url: string, opts: { method?: string; body?: unknown } = {}): Promise<{ ok: true; data: T } | { ok: false; error: ApiError }> {
+export async function api<T = unknown>(url: string, opts: { method?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<{ ok: true; data: T } | { ok: false; error: ApiError }> {
   const res = await fetch(url, {
     method: opts.method ?? (opts.body !== undefined ? "POST" : "GET"),
-    headers: { "content-type": "application/json", "x-ngm-csrf": "1" },
+    headers: { "content-type": "application/json", ...opts.headers, "x-ngm-csrf": "1" },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     credentials: "same-origin",
   });

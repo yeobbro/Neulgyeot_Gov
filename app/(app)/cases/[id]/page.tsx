@@ -17,7 +17,7 @@ import { getAssessment, getCase, listRecords } from "@/lib/server/services/cases
 import { getPlans } from "@/lib/server/services/plans";
 import { listServiceReferralsForCase } from "@/lib/server/services/providers";
 import { caseTimeline, listMonitoring } from "@/lib/server/services/followup";
-import { listDrafts, llmAvailable } from "@/lib/server/services/ai";
+import { listDraftGroups } from "@/lib/server/services/ai-review";
 import { listCaseManagers } from "@/lib/server/services/admin";
 
 export const metadata = { title: "사례 상세" };
@@ -46,8 +46,8 @@ export default async function CaseDetail({ params, searchParams }: { params: Pro
     if (tab === "timeline") out.timeline = await caseTimeline(tx, actor, id);
     if (tab === "ai") {
       const [s] = await tx.query<{ ai_enabled: boolean }>(`SELECT ai_enabled FROM tenant_settings WHERE tenant_id = $1`, [actor.tenantId]);
-      out.drafts = await listDrafts(tx, actor, { caseId: id });
-      out.llm = llmAvailable(Boolean(s?.ai_enabled));
+      out.groups = await listDraftGroups(tx, { caseId: id }); // read access checked by getCase above
+      out.aiEnabled = Boolean(s?.ai_enabled);
     }
     return out;
   }, { roles: ["municipal_admin", "case_manager"] });
@@ -328,7 +328,7 @@ export default async function CaseDetail({ params, searchParams }: { params: Pro
 
       {tab === "ai" && (
         <Panel title="AI 행정 업무 보조" id="ai-panel">
-          <AiDraftPanel target={{ caseId: id }} kinds={["social_opinion", "meeting_brief"]} drafts={data.drafts as any} canWrite={canWrite} llm={Boolean(data.llm)} />
+          <AiDraftPanel target={{ caseId: id }} kinds={["social_opinion", "meeting_brief"]} groups={data.groups as any} canWrite={canWrite} aiEnabled={Boolean(data.aiEnabled)} />
         </Panel>
       )}
     </>

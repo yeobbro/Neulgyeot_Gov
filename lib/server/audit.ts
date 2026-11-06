@@ -18,6 +18,8 @@ export const AUDIT_ACTIONS = [
   "task.update", "provider.capacity_update", "provider.public_directory_import", "provider.public_directory_verified", "provider.public_directory_verification_revoked",
   "export.csv", "export.print",
   "ai.generate", "ai.approve", "ai.discard",
+  "ai.job.enqueue", "ai.job.complete", "ai.job.retry", "ai.job.fail", "ai.job.cancel", "ai.job.stale", "ai.job.defer", "ai.job.release",
+  "ai.select", "ai.hold",
   "settings.update", "access.denied",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

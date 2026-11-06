@@ -7,7 +7,8 @@
 | `SESSION_SECRET` | 운영 필수(32자+) | `DEMO_MODE=true`면 경고 후 데모용 고정 값 사용 — 실데이터 금지 |
 | `APP_URL` | 권장 | 배포 URL |
 | `DEMO_MODE` | | `true`: 합성 데이터 데모(데모 로그인, 비영구 DB 허용) |
-| `AI_FEATURE_ENABLED`, `ANTHROPIC_API_KEY`, `AI_MODEL` | 선택 | 외부 LLM (기본 꺼짐) |
+| `AI_FEATURE_ENABLED`, `ANTHROPIC_API_KEY`, `AI_MODEL` | **사용 안 함** | 외부 LLM 경로는 코드에서 제거됨. 설정해도 동작하지 않음 |
+| `AI_PROVIDER`, `AI_INTELLIGENCE_URL`, `AI_INTELLIGENCE_TENANT_TOKENS`, `AI_INTELLIGENCE_TIMEOUT_MS` | 예정(미연결) | AI Intelligence Provider 설정. 기본값은 규칙만. 아직 어떤 경로에서도 읽지 않음 → [AI_PROVIDER_INTEGRATION.md](AI_PROVIDER_INTEGRATION.md) |
 | `HOSPITAL_INTEGRATION_DEMO_KEY` | 선택 | 데모 연계 키 교체 |
 
 ## 운영 기동 규칙
@@ -23,3 +24,9 @@
 - Vercel 프로젝트 `neulgyeot-municipality` 생성(GitHub `yeobbro/Neulgyeot_Gov` 연결), 환경변수 `DEMO_MODE=true`, `AI_FEATURE_ENABLED=false`
 - 최초 Production 빌드(`main` = 초기 커밋, 소스 없음)는 예상대로 실패. PR 병합 후 `main`에서 Production 빌드 예정
 - `DATABASE_URL`·`SESSION_SECRET` 미설정 → 인메모리 DEMO DB(비영구), 데모용 세션 키 경고 상태 — 실데이터 사용 금지
+
+## DB 현황과 테스트 방침 (2026-11-06)
+- Vercel `neulgyeot-municipality`의 Production·Preview에는 `DEMO_MODE`·`AI_FEATURE_ENABLED`만 있고 `DATABASE_URL`이 없습니다.
+- 그래서 두 환경 모두 인스턴스별 인메모리 DB(PGlite)로 동작하고, 영구·스테이징 DB는 없습니다.
+- 정식 서비스 전까지 유료 DB는 만들지 않습니다. 마이그레이션·RLS·워커 검증은 로컬/Docker PostgreSQL로 합니다(`docs/LOCAL_POSTGRES_TESTING.md`, `npm run test:pg`).
+- `main` 병합은 Vercel Git 연동으로 Production 배포를 자동 생성합니다(PR #1–#3 이력). 병합 전에 이 점을 확인해야 합니다.

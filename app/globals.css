@@ -154,6 +154,15 @@ ol.timeline li::before { content: ""; position: absolute; left: -6px; top: 4px; 
 ol.timeline time { color: var(--text-3); font-size: 12px; display: block; }
 .source-ref { font-size: 11px; color: var(--teal); background: var(--teal-soft); border-radius: 3px; padding: 0 4px; margin-left: 4px; white-space: nowrap; }
 .ai-box { border: 1px dashed #9fb7e0; background: #f7faff; border-radius: 6px; padding: 12px 14px; }
+.cmp-col { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: var(--surface); min-width: 0; }
+.cmp-col.is-selected { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue) inset; }
+.cmp-col.is-discarded { opacity: .65; }
+.cmp-sent { margin: 4px 0; padding: 2px 4px; border-radius: 3px; }
+.cmp-sent.ai_only, .cmp-sent.rule_only { background: var(--amber-soft); }
+.source-btn { font: inherit; font-size: 11px; color: var(--teal); background: var(--teal-soft); border: 0; border-radius: 3px; padding: 0 4px; margin-left: 4px; cursor: pointer; }
+.source-btn[aria-expanded="true"] { outline: 2px solid var(--teal); }
+.evidence code { word-break: break-all; }
+.evidence { overflow-wrap: anywhere; margin: 4px 0 6px 12px; font-size: 12px; color: var(--text-2); border-left: 3px solid var(--teal-soft); padding-left: 8px; }
 .ai-box .ai-label { font-size: 11.5px; font-weight: 700; color: var(--blue); letter-spacing: .02em; }
 .pager { display: flex; gap: 6px; align-items: center; justify-content: flex-end; padding: 10px 16px; font-size: 13px; color: var(--text-2); flex-wrap: wrap; }
 

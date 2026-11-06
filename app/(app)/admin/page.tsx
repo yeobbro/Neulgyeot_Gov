@@ -36,7 +36,7 @@ export default async function AdminPage() {
               { name: "capacityFreshDays", label: "수용 정보 유효 기간(일)", type: "number", required: true, defaultValue: String(s.capacity_fresh_days) },
               { name: "planApprovalRoles", label: "지원계획 승인 권한", type: "checks", defaultValue: s.plan_approval_roles, options: [{ value: "municipal_admin", label: "시·군·구 관리자" }, { value: "case_manager", label: "사례관리 담당자" }] },
               { name: "intakeAllowedCategories", label: "병원 연계 수신 항목 (최소수집)", type: "checks", defaultValue: s.intake_allowed_categories, options: TRANSFER_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABEL[c] })) },
-              { name: "aiEnabled", label: "외부 LLM 사용 허용 (서버 환경변수 AI_FEATURE_ENABLED도 필요)", type: "checkbox", defaultValue: s.ai_enabled },
+              { name: "aiEnabled", label: "AI 초안 제안 요청 허용 (기본 꺼짐 · 합성 데이터만 전송 · AI 처리 서버 연결 필요)", type: "checkbox", defaultValue: s.ai_enabled },
             ]} />
           </Panel>
           <Panel title="운영 환경" id="env">

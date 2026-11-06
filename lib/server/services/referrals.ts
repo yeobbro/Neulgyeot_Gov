@@ -71,6 +71,17 @@ async function loadScoped(tx: Db, actor: Actor, id: string) {
   return r;
 }
 
+/**
+ * Write access to an incoming referral: a municipal admin, or the case manager assigned to it — the same rule
+ * transitionReferral()/acceptReferral() apply. Out of region/assignment scope or another tenant → 404 (via
+ * loadScoped/RLS); in scope but not allowed to act → 403.
+ */
+export async function assertReferralWrite(tx: Db, actor: Actor, id: string) {
+  const r = await loadScoped(tx, actor, id);
+  if (!isAdmin(actor) && r.assigned_user_id !== actor.id) throw forbidden("배정된 담당자 또는 관리자만 처리할 수 있습니다.");
+  return r;
+}
+
 export async function getReferral(tx: Db, actor: Actor, id: string) {
   const r = await loadScoped(tx, actor, id);
   const versions = await tx.query<{ id: string; version_no: number; payload: Record<string, unknown>; received_at: string; payload_hash: string }>(
