@@ -30,6 +30,9 @@ export const KNOWN_PROVIDER_CODES = new Set([
   "no_tenant_token", "circuit_open", "timeout", "network", "unavailable", "server_error", "client_error", "trace_mismatch",
   "invalid_response", "no_result", "llm_disabled", "unauthorized", "forbidden", "tenant_mismatch", "rate_limited", "payload_too_large",
   "invalid_request", "real_data_refused", "provider_error",
+  // AI Intelligence v1.1 prototype (ai_ext/server.py, tokens.py) — verified against the running prototype
+  "token_expired", "token_revoked", "unauthenticated", "forbidden_scope", "real_data_blocked", "not_found", "input_too_large",
+  "busy", "internal_error", "no_usable_records", "schema_invalid",
 ]);
 export const knownCode = (c: string | null | undefined) => (c && KNOWN_PROVIDER_CODES.has(c) ? c : "provider_error");
 
