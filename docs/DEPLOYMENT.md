@@ -7,7 +7,8 @@
 | `SESSION_SECRET` | 운영 필수(32자+) | `DEMO_MODE=true`면 경고 후 데모용 고정 값 사용 — 실데이터 금지 |
 | `APP_URL` | 권장 | 배포 URL |
 | `DEMO_MODE` | | `true`: 합성 데이터 데모(데모 로그인, 비영구 DB 허용) |
-| `AI_FEATURE_ENABLED`, `ANTHROPIC_API_KEY`, `AI_MODEL` | 선택 | 외부 LLM (기본 꺼짐) |
+| `AI_FEATURE_ENABLED`, `ANTHROPIC_API_KEY`, `AI_MODEL` | **사용 안 함** | 외부 LLM 경로는 코드에서 제거됨. 설정해도 동작하지 않음 |
+| `AI_PROVIDER`, `AI_INTELLIGENCE_URL`, `AI_INTELLIGENCE_TENANT_TOKENS`, `AI_INTELLIGENCE_TIMEOUT_MS` | 예정(미연결) | AI Intelligence Provider 설정. 기본값은 규칙만. 아직 어떤 경로에서도 읽지 않음 → [AI_PROVIDER_INTEGRATION.md](AI_PROVIDER_INTEGRATION.md) |
 | `HOSPITAL_INTEGRATION_DEMO_KEY` | 선택 | 데모 연계 키 교체 |
 
 ## 운영 기동 규칙
