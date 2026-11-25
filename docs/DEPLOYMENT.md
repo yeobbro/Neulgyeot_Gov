@@ -8,7 +8,10 @@
 | `APP_URL` | 권장 | 배포 URL |
 | `DEMO_MODE` | | `true`: 합성 데이터 데모(데모 로그인, 비영구 DB 허용) |
 | `AI_FEATURE_ENABLED`, `ANTHROPIC_API_KEY`, `AI_MODEL` | **사용 안 함** | 외부 LLM 경로는 코드에서 제거됨. 설정해도 동작하지 않음 |
-| `AI_PROVIDER`, `AI_INTELLIGENCE_URL`, `AI_INTELLIGENCE_TENANT_TOKENS`, `AI_INTELLIGENCE_TIMEOUT_MS` | 예정(미연결) | AI Intelligence Provider 설정. 기본값은 규칙만. 아직 어떤 경로에서도 읽지 않음 → [AI_PROVIDER_INTEGRATION.md](AI_PROVIDER_INTEGRATION.md) |
+| `AI_PROVIDER` | 선택 | 비우면 규칙만. `local_llm` = 로컬 LLM, `ai_intelligence` = AI Intelligence 서버. 워커(`scripts/ai-worker.mts` 또는 `AI_INPROCESS_WORKER`)만 읽음 |
+| `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`, `LOCAL_LLM_API_KEY`, `LOCAL_LLM_TIMEOUT_MS`, `LOCAL_LLM_MAX_TOKENS` | `local_llm`일 때 | OpenAI 호환 추론 서버. 기본 `http://127.0.0.1:11434`(Ollama). http는 localhost·사설망만 허용 → [LOCAL_LLM.md](LOCAL_LLM.md) |
+| `AI_INPROCESS_WORKER` | 선택 | `true`면 `next start` 프로세스 안에서 작업 워커 실행(단일 장비 데모용). Vercel과 `DEMO_MODE` 없는 운영에서는 거부 |
+| `AI_INTELLIGENCE_URL`, `AI_INTELLIGENCE_TENANT_TOKENS`, `AI_INTELLIGENCE_TIMEOUT_MS` | `ai_intelligence`일 때 | → [AI_PROVIDER_INTEGRATION.md](AI_PROVIDER_INTEGRATION.md) |
 | `HOSPITAL_INTEGRATION_DEMO_KEY` | 선택 | 데모 연계 키 교체 |
 
 ## 운영 기동 규칙
