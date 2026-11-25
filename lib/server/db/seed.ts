@@ -319,7 +319,9 @@ export async function seed(db: Db) {
   await ins(db, "id_counters", { tenant_id: T, prefix: `SR-${new Date().getFullYear()}`, value: 6 });
   await ins(db, "id_counters", { tenant_id: T, prefix: `APP-${new Date().getFullYear()}`, value: 10 });
 
-  await seedWearables(db, T);
+  // 007 may not be applied yet (tests/pg seed a pre-006 schema to exercise later migrations on legacy data).
+  const [{ has }] = await db.query<{ has: boolean }>(`SELECT to_regclass('wearable_consents') IS NOT NULL AS has`);
+  if (has) await seedWearables(db, T);
 
   /* ---------------- Tenant B: 내부 격리 테스트 전용 테넌트 ---------------- */
   const U = OTHER_TENANT;

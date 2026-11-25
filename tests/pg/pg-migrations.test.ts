@@ -87,7 +87,7 @@ test("006 on legacy data: backfill, split double approvals, NOT VALID one-target
     await ins("aid_lg_open", { status: "draft" });
     await ins("aid_lg_dual", { status: "draft", kind: "social_opinion", caseId: "case_3", referralId: "ir_2" }); // legacy: both targets
 
-    assert.deepEqual(await applyMigrations(t.db), ["006_ai_draft_review"]);
+    assert.deepEqual(await applyMigrations(t.db), ["006_ai_draft_review", "007_wearables"]);
     const rows = Object.fromEntries((await t.db.query<{ id: string; draft_group_id: string; status: string; selection_status: string }>(
       `SELECT id, draft_group_id, status, selection_status FROM ai_drafts WHERE id LIKE 'aid_lg_%'`)).map((r) => [r.id, r]));
     assert.equal(rows.aid_lg_root.draft_group_id, "aid_lg_root");
