@@ -5,6 +5,10 @@
  *   AI_WORKER_ENABLED=true DATABASE_URL=... AI_PROVIDER=ai_intelligence AI_INTELLIGENCE_URL=https://... \
  *   AI_INTELLIGENCE_TENANT_TOKENS='{"tn_x":"..."}' npx tsx scripts/ai-worker.mts
  *
+ * Local LLM instead (Ollama / vLLM in the institution's network):
+ *   AI_WORKER_ENABLED=true DATABASE_URL=... AI_PROVIDER=local_llm LOCAL_LLM_BASE_URL=http://127.0.0.1:11434 \
+ *   LOCAL_LLM_MODEL=qwen2.5:7b npx tsx scripts/ai-worker.mts
+ *
  * Optional: AI_WORKER_ID, AI_WORKER_POLL_MS (5000), AI_WORKER_LEASE_SECONDS (600), AI_WORKER_JOB_TIMEOUT_MS (300000),
  * AI_WORKER_SHUTDOWN_GRACE_MS (30000), AI_WORKER_HEALTH_PORT (health JSON on 127.0.0.1 only).
  * Logs are JSON lines with ids, codes and counts only — never content, tokens or connection strings.
@@ -27,7 +31,7 @@ try {
 } catch (e) {
   fail(e instanceof Error ? e.message : "invalid provider configuration"); // messages never include token values
 }
-if (!provider) fail("AI provider not configured (AI_PROVIDER=ai_intelligence and AI_INTELLIGENCE_URL)");
+if (!provider) fail("AI provider not configured (AI_PROVIDER=ai_intelligence + AI_INTELLIGENCE_URL, or AI_PROVIDER=local_llm + LOCAL_LLM_MODEL)");
 const num = (v: string | undefined, d: number, min: number, max: number) => Math.min(Math.max(Number(v ?? d) || d, min), max);
 
 const db = await openDb({ migrate: false }); // schema changes are applied by the release process, never by the worker

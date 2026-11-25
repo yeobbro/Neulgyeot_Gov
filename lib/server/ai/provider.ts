@@ -13,13 +13,14 @@ import { verifyDraft, type DraftContent, type Fact } from "../../domain/ai-draft
 import type { DraftKind } from "../services/ai";
 import { errorResponseSchema, healthResponseSchema, predictResponseSchema, summarizeRequestSchema, summarizeResponseSchema, CONTRACT_MAJOR } from "./contract";
 import { selectSendableFacts, type ExcludedFact, type ProviderRecord } from "./fact-policy";
+import { localLLMFromEnv } from "./local-llm";
 
 export type DraftEngine = "rules" | "ai-intelligence" | "hybrid";
 
 export type ProviderDraft = { sections: DraftContent["sections"]; requestId: string; model: string | null; promptVersion: string; engine: string };
 
 export interface AIProvider {
-  readonly name: "rules" | "ai-intelligence";
+  readonly name: "rules" | "ai-intelligence" | "local-llm";
   health(): Promise<{ ok: boolean; reason?: string; contractVersion?: string; llmAvailable?: boolean }>;
   /** Proposes sentences for the given section titles using only `facts`. Throws ProviderUnavailable on any problem. */
   proposeDraft(input: { tenantId: string; kind: DraftKind; sectionTitles: string[]; facts: readonly ProviderRecord[]; traceId: string }): Promise<ProviderDraft>;
@@ -331,8 +332,13 @@ export async function composeDraft(args: {
 }
 
 /* --------------------------------------------------------------------------------------- configuration */
-/** Reads provider settings. Default: rules only. No secrets are logged. Not called by any route yet. */
+/**
+ * Reads provider settings. Default: rules only. No secrets are logged. Used by the AI job worker.
+ *  - AI_PROVIDER=ai_intelligence → remote Neulgyeot AI Intelligence service (per-tenant tokens)
+ *  - AI_PROVIDER=local_llm       → on-premise OpenAI-compatible model server (Ollama, vLLM …), see local-llm.ts
+ */
 export function providerFromEnv(env: Record<string, string | undefined> = process.env, fetchImpl?: typeof fetch): AIProvider | null {
+  if (env.AI_PROVIDER === "local_llm") return localLLMFromEnv(env, fetchImpl);
   if (env.AI_PROVIDER !== "ai_intelligence") return null;
   const url = env.AI_INTELLIGENCE_URL;
   if (!url) return null;
