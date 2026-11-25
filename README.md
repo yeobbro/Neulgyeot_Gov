@@ -21,6 +21,7 @@
 - 설명 가능한 규칙 기반 제공기관 매칭(수용 정보 신선도 반영), 서비스 의뢰·제공 결과, 제공기관 포털
 - 서울열린데이터광장 강남구 사회복지시설 CSV 가져오기·중복 갱신·출처 기록·관리자 검증(검증 전 매칭 차단)
 - 모니터링·후속 업무, 실제 도로 지도와 행정동 참고 좌표를 활용한 지역 자원 지도(제공기관 핀은 합성 데이터이므로 미표시), 보고서(정의·산식·기준일·누락률), CSV(수식 주입 방지)
+- 웨어러블(스마트링·워치) 연동 Phase 0 — 게이트웨이 일 요약 수신(항목별 별도 동의 범위 밖 거부), 개인 기준선 대비 설명 가능한 "확인 필요" 신호, 사례당 1건 확인 업무, 사례 `웨어러블` 탭 (응급 관제·진단 아님, 합성 데이터)
 - AI 보조 3종(연계 요약, 사회복지 종합 소견서 초안, 회의 자료) — 규칙 기반 기본, 문장별 근거, draft→사람 승인
 - PostgreSQL RLS 테넌트 격리, 감사 로그(본문 미저장, 추가 전용), CSRF/CSP/rate limit
 
@@ -41,4 +42,4 @@ npm run dev            # DATABASE_URL 없으면 인메모리 DEMO DB + 합성 �
 | `npm run db:migrate` | `DATABASE_URL` 대상 마이그레이션 |
 
 ## 문서
-[지리 데이터 출처·범위](docs/GEOGRAPHIC_DATA.md) · [제품 명세](docs/PRODUCT_SPEC.md) · [아키텍처](docs/ARCHITECTURE.md) · [DB](docs/DATABASE.md) · [API](docs/API.md) · [병원 연계](docs/INTEGRATION_WITH_HOSPITAL.md) · [AI](docs/AI_LOGIC.md) · [보안](docs/SECURITY.md) · [개인정보·법률 검토](docs/PRIVACY_AND_LEGAL_REVIEW.md) · [데모 가이드](docs/DEMO_GUIDE.md) · [테스트 보고서](docs/TEST_REPORT.md) · [배포](docs/DEPLOYMENT.md) · [로드맵](docs/ROADMAP.md) · [기존 MVP 이전](docs/MIGRATION_FROM_EXISTING_MUNICIPAL_MVP.md)
+[지리 데이터 출처·범위](docs/GEOGRAPHIC_DATA.md) · [제품 명세](docs/PRODUCT_SPEC.md) · [아키텍처](docs/ARCHITECTURE.md) · [DB](docs/DATABASE.md) · [API](docs/API.md) · [병원 연계](docs/INTEGRATION_WITH_HOSPITAL.md) · [AI](docs/AI_LOGIC.md) · [웨어러블 연동](docs/WEARABLE_INTEGRATION.md) · [보안](docs/SECURITY.md) · [개인정보·법률 검토](docs/PRIVACY_AND_LEGAL_REVIEW.md) · [데모 가이드](docs/DEMO_GUIDE.md) · [테스트 보고서](docs/TEST_REPORT.md) · [배포](docs/DEPLOYMENT.md) · [로드맵](docs/ROADMAP.md) · [기존 MVP 이전](docs/MIGRATION_FROM_EXISTING_MUNICIPAL_MVP.md)

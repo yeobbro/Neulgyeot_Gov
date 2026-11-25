@@ -8,12 +8,14 @@
 import { createHash } from "node:crypto";
 import { DEFAULT_INTAKE_POLICY } from "../../integrations/hospital/consent-scope";
 import { ASSESSMENT_DOMAINS, SERVICE_TYPES, SERVICE_TYPE_LABEL, type ServiceType } from "../../domain/enums";
+import { evaluateDay, type DailySummary } from "../../domain/wearable";
 import type { Db } from "./client";
 import { hashPassword } from "../auth/password";
 
 export const DEMO_TENANT = "tn_gaon";
 export const OTHER_TENANT = "tn_nuri";
 export const DEMO_HOSPITAL_KEY_DEFAULT = "demo-hospital-integration-key-not-a-secret";
+export const DEMO_WEARABLE_KEY_DEFAULT = "demo-wearable-gateway-key-not-a-secret";
 
 export const DEMO_USERS = {
   admin: "usr_gaon_admin",
@@ -317,6 +319,8 @@ export async function seed(db: Db) {
   await ins(db, "id_counters", { tenant_id: T, prefix: `SR-${new Date().getFullYear()}`, value: 6 });
   await ins(db, "id_counters", { tenant_id: T, prefix: `APP-${new Date().getFullYear()}`, value: 10 });
 
+  await seedWearables(db, T);
+
   /* ---------------- Tenant B: 내부 격리 테스트 전용 테넌트 ---------------- */
   const U = OTHER_TENANT;
   await seedTenant(db, U, "DEMO-NURI", "내부 격리 테스트 지자체 (DEMO, 비노출)");
@@ -343,3 +347,51 @@ const SAMPLE_VALUE: Record<string, string> = {
   recipient_wishes: "집에서 계속 생활하고 싶음",
   surveyor_opinion: "식사·이동 지원 우선 검토 필요",
 };
+
+/**
+ * Synthetic wearable data (docs/WEARABLE_INTEGRATION.md):
+ *  - C-0003 smart ring: 14 steady days, then the last 2 days show lower activity and longer sleep → signals + a check task.
+ *  - C-0006 smart watch: nothing received for 3 days → a `no_data` signal appears when the wearable tab is opened.
+ */
+async function seedWearables(db: Db, T: string) {
+  const key = process.env.WEARABLE_GATEWAY_DEMO_KEY ?? DEMO_WEARABLE_KEY_DEFAULT;
+  await ins(db, "integration_clients", {
+    id: "ic_gaon_wear", tenant_id: T, source_org_code: "SYN-WEAR-GW", source_org_name: "늘곁 웨어러블 게이트웨이 (DEMO)",
+    key_hash: hashKey(key), scopes: ["wearables:write"], is_active: true, is_demo: true,
+  });
+  const legal = "정보주체 별도 동의(개인정보 보호법 제23조) — DEMO";
+  await ins(db, "wearable_consents", { id: "wcn_3", tenant_id: T, case_id: "case_3", metrics: ["wear", "activity", "sleep", "heart_rate"], legal_basis: legal, consent_recorded_at: iso(-20), retention_days: 90, recorded_by: DEMO_USERS.cmHaesol });
+  await ins(db, "wearable_devices", { id: "wdv_3", tenant_id: T, case_id: "case_3", consent_id: "wcn_3", client_id: "ic_gaon_wear", device_ref: "SYN-RING-0003", device_kind: "smart_ring", model_label: "합성 스마트링 (DEMO)", paired_at: iso(-18), last_received_at: iso(-0.2) });
+  await ins(db, "wearable_consents", { id: "wcn_6", tenant_id: T, case_id: "case_6", metrics: ["wear", "activity", "fall", "sos"], legal_basis: legal, consent_recorded_at: iso(-15), retention_days: 90, recorded_by: DEMO_USERS.cmMaru });
+  await ins(db, "wearable_devices", { id: "wdv_6", tenant_id: T, case_id: "case_6", consent_id: "wcn_6", client_id: "ic_gaon_wear", device_ref: "SYN-WATCH-0006", device_kind: "smart_watch", model_label: "합성 스마트워치 (DEMO)", paired_at: iso(-12), last_received_at: iso(-3) });
+
+  const ring: DailySummary[] = [];
+  for (let k = 16; k >= 1; k--) {
+    const late = k <= 2; // the last two days differ from the person's usual pattern
+    ring.push({
+      date: d(-k), wearMinutes: 1260 + ((k * 37) % 120), steps: late ? 900 + k * 60 : 2400 + ((k * 173) % 600), activeMinutes: late ? 8 : 30 + (k % 9),
+      sleepMinutes: late ? 600 : 420 + ((k * 11) % 40), restingHeartRate: 64 + (k % 4), heartRateMin: 52 + (k % 3), heartRateMax: 112 + (k % 7),
+    });
+  }
+  const watch: DailySummary[] = [];
+  for (let k = 12; k >= 3; k--) watch.push({ date: d(-k), wearMinutes: 900 + ((k * 29) % 200), steps: 3100 + ((k * 211) % 900), activeMinutes: 40 + (k % 6), fallEvents: 0, sosEvents: 0 });
+
+  const put = async (device: string, caseId: string, rows: DailySummary[]) => {
+    for (const r of rows) {
+      await ins(db, "wearable_daily_summaries", {
+        id: `wds_${device}_${r.date}`, tenant_id: T, device_id: device, case_id: caseId, summary_date: r.date, wear_minutes: r.wearMinutes, steps: r.steps ?? null,
+        active_minutes: r.activeMinutes ?? null, sleep_minutes: r.sleepMinutes ?? null, resting_heart_rate: r.restingHeartRate ?? null, heart_rate_min: r.heartRateMin ?? null,
+        heart_rate_max: r.heartRateMax ?? null, spo2_min: r.spo2Min ?? null, fall_events: r.fallEvents ?? null, sos_events: r.sosEvents ?? null,
+      });
+    }
+  };
+  await put("wdv_3", "case_3", ring);
+  await put("wdv_6", "case_6", watch);
+
+  const signals = ring.flatMap((r) => evaluateDay(r, ring));
+  if (signals.length) {
+    await ins(db, "action_tasks", { id: "tsk_wear_3", tenant_id: T, case_id: "case_3", task_type: "wearable_check", title: "C-0003 웨어러블 신호 확인", due_at: d(0), status: "open", assignee_id: DEMO_USERS.cmHaesol });
+    for (const [i, s] of signals.entries())
+      await ins(db, "wearable_signals", { id: `wsg_3_${i}`, tenant_id: T, case_id: "case_3", device_id: "wdv_3", signal_type: s.type, signal_date: s.date, message: s.message, basis: s.basis, task_id: "tsk_wear_3" });
+  }
+}

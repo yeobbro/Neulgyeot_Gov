@@ -328,6 +328,7 @@ export const TASK_TYPES = [
   "referral_review",
   "info_request_followup",
   "assessment_due",
+  "wearable_check",
 ] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 export const TASK_TYPE_LABEL: Record<TaskType, string> = {
@@ -341,6 +342,7 @@ export const TASK_TYPE_LABEL: Record<TaskType, string> = {
   referral_review: "연계 신청 검토",
   info_request_followup: "보완 자료 확인",
   assessment_due: "조사 예정",
+  wearable_check: "웨어러블 확인 필요",
 };
 export const TASK_STATUSES = ["open", "done", "canceled"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];

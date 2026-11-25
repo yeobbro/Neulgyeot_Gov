@@ -114,6 +114,7 @@ export async function caseTimeline(tx: Db, actor: Actor, caseId: string) {
      UNION ALL SELECT updated_at, 'plan', status, 'v' || version_no FROM support_plans WHERE case_id = $1
      UNION ALL SELECT scheduled_at, 'meeting', status, NULL FROM integrated_support_meetings WHERE case_id = $1
      UNION ALL SELECT coalesce(confirmed_at, updated_at), 'assessment', status, kind FROM needs_assessments WHERE case_id = $1
+     UNION ALL SELECT coalesce(reviewed_at, created_at), 'wearable', signal_type, status FROM wearable_signals WHERE case_id = $1
      UNION ALL SELECT a.at, 'status', a.meta->>'to', a.meta->>'from' FROM audit_logs a WHERE a.entity_id = $1 AND a.action IN ('case.status_change','case.close')
      ORDER BY 1 DESC LIMIT 200`,
     [caseId],

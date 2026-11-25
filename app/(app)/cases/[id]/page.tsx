@@ -19,16 +19,19 @@ import { listServiceReferralsForCase } from "@/lib/server/services/providers";
 import { caseTimeline, listMonitoring } from "@/lib/server/services/followup";
 import { listDraftGroups } from "@/lib/server/services/ai-review";
 import { listCaseManagers } from "@/lib/server/services/admin";
+import { getWearableOverview, listWearableGateways } from "@/lib/server/services/wearables";
+import { WearableTab } from "@/components/WearableTab";
+import { SIGNAL_LABEL, SIGNAL_STATUS_LABEL, type SignalStatus, type SignalType } from "@/lib/domain/wearable";
 
 export const metadata = { title: "사례 상세" };
 const TABS = [
-  ["overview", "기본 정보"], ["assessment", "조사·평가"], ["plan", "지원계획·회의"], ["services", "서비스 연계"], ["monitoring", "모니터링"], ["records", "상담 기록"], ["timeline", "업무 타임라인"], ["ai", "AI 보조"],
+  ["overview", "기본 정보"], ["assessment", "조사·평가"], ["plan", "지원계획·회의"], ["services", "서비스 연계"], ["monitoring", "모니터링"], ["wearable", "웨어러블"], ["records", "상담 기록"], ["timeline", "업무 타임라인"], ["ai", "AI 보조"],
 ] as const;
 const DEPT: Record<string, string> = {
   visiting_nursing: "보건소 방문보건팀", visiting_health: "보건소 방문보건팀", home_medical_link: "보건소 의약과", meal: "복지정책과", mobility: "교통행정과", housework: "노인복지과",
   home_modification: "건축과·주거복지팀", home_care: "노인복지과", ltc_link: "통합돌봄과", cognitive_emotional: "치매안심센터", social_participation: "노인복지과", family_caregiver: "가족정책과", local_special: "통합돌봄과",
 };
-const TIMELINE_KIND: Record<string, string> = { record: "상담 기록", monitoring: "모니터링", service: "서비스 의뢰", plan: "지원계획", meeting: "통합지원회의", assessment: "조사·평가", status: "사례 상태 변경" };
+const TIMELINE_KIND: Record<string, string> = { record: "상담 기록", monitoring: "모니터링", service: "서비스 의뢰", plan: "지원계획", meeting: "통합지원회의", assessment: "조사·평가", status: "사례 상태 변경", wearable: "웨어러블 신호" };
 
 export default async function CaseDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
@@ -42,6 +45,10 @@ export default async function CaseDetail({ params, searchParams }: { params: Pro
     if (tab === "plan" || tab === "services") out.plans = await getPlans(tx, actor, id);
     if (tab === "services") out.services = await listServiceReferralsForCase(tx, actor, id);
     if (tab === "monitoring") out.monitoring = await listMonitoring(tx, actor, id);
+    if (tab === "wearable") {
+      out.wearable = await getWearableOverview(tx, actor, id);
+      out.gateways = await listWearableGateways(tx);
+    }
     if (tab === "records") out.records = await listRecords(tx, actor, id);
     if (tab === "timeline") out.timeline = await caseTimeline(tx, actor, id);
     if (tab === "ai") {
@@ -321,9 +328,13 @@ export default async function CaseDetail({ params, searchParams }: { params: Pro
       {tab === "timeline" && (
         <Panel title="업무 타임라인" id="tl">
           {(data.timeline as any[]).length === 0 ? <Empty /> : (
-            <ol className="timeline">{(data.timeline as any[]).map((t, i) => <li key={i}><time>{fmtDateTime(t.at)}</time><strong>{TIMELINE_KIND[t.kind] ?? t.kind}</strong> · {t.kind === "status" ? `${CASE_STATUS_LABEL[t.detail as CaseStatus] ?? t.detail ?? ""} → ${CASE_STATUS_LABEL[t.title as CaseStatus] ?? t.title}` : t.kind === "service" ? `${t.detail} ${SERVICE_REFERRAL_STATUS_LABEL[t.title as ServiceReferralStatus] ?? t.title}` : t.kind === "plan" ? `${t.detail} ${PLAN_STATUS_LABEL[t.title as PlanStatus] ?? t.title}` : t.kind === "record" ? RECORD_TYPE_LABEL[t.title as RecordType] ?? t.title : t.kind === "monitoring" ? `${MONITORING_METHOD_LABEL[t.title as MonitoringMethod] ?? t.title}${t.detail ? ` · ${t.detail}` : ""}` : t.title}</li>)}</ol>
+            <ol className="timeline">{(data.timeline as any[]).map((t, i) => <li key={i}><time>{fmtDateTime(t.at)}</time><strong>{TIMELINE_KIND[t.kind] ?? t.kind}</strong> · {t.kind === "status" ? `${CASE_STATUS_LABEL[t.detail as CaseStatus] ?? t.detail ?? ""} → ${CASE_STATUS_LABEL[t.title as CaseStatus] ?? t.title}` : t.kind === "service" ? `${t.detail} ${SERVICE_REFERRAL_STATUS_LABEL[t.title as ServiceReferralStatus] ?? t.title}` : t.kind === "plan" ? `${t.detail} ${PLAN_STATUS_LABEL[t.title as PlanStatus] ?? t.title}` : t.kind === "record" ? RECORD_TYPE_LABEL[t.title as RecordType] ?? t.title : t.kind === "monitoring" ? `${MONITORING_METHOD_LABEL[t.title as MonitoringMethod] ?? t.title}${t.detail ? ` · ${t.detail}` : ""}` : t.kind === "wearable" ? `${SIGNAL_LABEL[t.title as SignalType] ?? t.title} · ${SIGNAL_STATUS_LABEL[t.detail as SignalStatus] ?? t.detail}` : t.title}</li>)}</ol>
           )}
         </Panel>
+      )}
+
+      {tab === "wearable" && (
+        <WearableTab caseId={id} data={data.wearable as Awaited<ReturnType<typeof getWearableOverview>>} gateways={data.gateways as { id: string; source_org_name: string }[]} canWrite={canWrite} />
       )}
 
       {tab === "ai" && (
