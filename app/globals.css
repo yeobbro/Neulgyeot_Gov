@@ -41,6 +41,7 @@ p { margin: 0; }
 .skip-link { position: absolute; left: -9999px; top: 8px; z-index: 100; background: #fff; padding: 8px 12px; border: 2px solid var(--blue); }
 .skip-link:focus { left: 8px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.muted { color: var(--text-3); }
 
 /* ---------------- shell ---------------- */
 .shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; background: linear-gradient(90deg, var(--navy) 0 232px, var(--bg) 232px); }
