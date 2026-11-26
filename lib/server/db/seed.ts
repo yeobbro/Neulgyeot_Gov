@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { DEFAULT_INTAKE_POLICY } from "../../integrations/hospital/consent-scope";
 import { ASSESSMENT_DOMAINS, SERVICE_TYPES, SERVICE_TYPE_LABEL, type ServiceType } from "../../domain/enums";
 import { evaluateDay, type DailySummary } from "../../domain/wearable";
+import { ALERT_SEVERITY, alertMessage, evaluateReading } from "../../domain/control";
 import type { Db } from "./client";
 import { hashPassword } from "../auth/password";
 
@@ -322,6 +323,10 @@ export async function seed(db: Db) {
   // 007 may not be applied yet (tests/pg seed a pre-006 schema to exercise later migrations on legacy data).
   const [{ has }] = await db.query<{ has: boolean }>(`SELECT to_regclass('wearable_consents') IS NOT NULL AS has`);
   if (has) await seedWearables(db, T);
+  // seedControl needs 008 (control tables) and 009 (device_profile).
+  const [{ hasControl }] = await db.query<{ hasControl: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wearable_devices' AND column_name = 'device_profile') AS "hasControl"`);
+  if (hasControl) await seedControl(db, T);
 
   /* ---------------- Tenant B: 내부 격리 테스트 전용 테넌트 ---------------- */
   const U = OTHER_TENANT;
@@ -359,13 +364,16 @@ async function seedWearables(db: Db, T: string) {
   const key = process.env.WEARABLE_GATEWAY_DEMO_KEY ?? DEMO_WEARABLE_KEY_DEFAULT;
   await ins(db, "integration_clients", {
     id: "ic_gaon_wear", tenant_id: T, source_org_code: "SYN-WEAR-GW", source_org_name: "늘곁 웨어러블 게이트웨이 (DEMO)",
-    key_hash: hashKey(key), scopes: ["wearables:write"], is_active: true, is_demo: true,
+    key_hash: hashKey(key), scopes: ["wearables:write", "locations:write"], is_active: true, is_demo: true,
   });
   const legal = "정보주체 별도 동의(개인정보 보호법 제23조) — DEMO";
   await ins(db, "wearable_consents", { id: "wcn_3", tenant_id: T, case_id: "case_3", metrics: ["wear", "activity", "sleep", "heart_rate"], legal_basis: legal, consent_recorded_at: iso(-20), retention_days: 90, recorded_by: DEMO_USERS.cmHaesol });
   await ins(db, "wearable_devices", { id: "wdv_3", tenant_id: T, case_id: "case_3", consent_id: "wcn_3", client_id: "ic_gaon_wear", device_ref: "SYN-RING-0003", device_kind: "smart_ring", model_label: "합성 스마트링 (DEMO)", paired_at: iso(-18), last_received_at: iso(-0.2) });
   await ins(db, "wearable_consents", { id: "wcn_6", tenant_id: T, case_id: "case_6", metrics: ["wear", "activity", "fall", "sos"], legal_basis: legal, consent_recorded_at: iso(-15), retention_days: 90, recorded_by: DEMO_USERS.cmMaru });
   await ins(db, "wearable_devices", { id: "wdv_6", tenant_id: T, case_id: "case_6", consent_id: "wcn_6", client_id: "ic_gaon_wear", device_ref: "SYN-WATCH-0006", device_kind: "smart_watch", model_label: "합성 스마트워치 (DEMO)", paired_at: iso(-12), last_received_at: iso(-3) });
+  // 009 adds device_profile with a ring default; set the watch profile when the column exists (pre-009 schemas in tests/pg).
+  await db.query(`DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wearable_devices' AND column_name = 'device_profile') THEN
+    UPDATE wearable_devices SET device_profile = 'generic_watch' WHERE id = 'wdv_6'; END IF; END $$`);
 
   const ring: DailySummary[] = [];
   for (let k = 16; k >= 1; k--) {
@@ -396,4 +404,130 @@ async function seedWearables(db: Db, T: string) {
     for (const [i, s] of signals.entries())
       await ins(db, "wearable_signals", { id: `wsg_3_${i}`, tenant_id: T, case_id: "case_3", device_id: "wdv_3", signal_type: s.type, signal_date: s.date, message: s.message, basis: s.basis, task_id: "tsk_wear_3" });
   }
+}
+
+/**
+ * Synthetic control-view population (docs/CONTROL_DASHBOARD.md). All people, positions and readings are synthetic.
+ *  - 20 extra monitoring cases (C-0011…) around four 동 reference points, so the map shows every status.
+ *  - Designated locations are jittered area points (approximate, never real addresses).
+ *  - Current location only where a location consent exists; one consented subject has a stale fix (→ designated shown).
+ *  - Scenarios: vital_urgent (C-0011), SOS with an accepted dispatch (C-0014), vital_caution (C-0012), stale reading (C-0013),
+ *    visits in progress (서비스 중), no device (미연결).
+ */
+async function seedControl(db: Db, T: string) {
+  const regions = await db.query<{ id: string; latitude: number; longitude: number }>(
+    `SELECT id, latitude, longitude FROM region_units WHERE tenant_id = $1 AND level = 'eupmyeondong' AND latitude IS NOT NULL ORDER BY id`, [T]);
+  const center = Object.fromEntries(regions.map((r) => [r.id, r]));
+  const jitter = (n: number, salt: number) => ((((n * 9301 + salt * 49297) % 233280) / 233280) - 0.5);
+  const near = (rid: string, n: number, spread = 0.012) => ({ lat: center[rid].latitude + jitter(n, 7) * spread, lng: center[rid].longitude + jitter(n, 13) * spread * 1.25 });
+  const worker = (rid: string) => (rid === "rg_haesol" || rid === "rg_daon" ? DEMO_USERS.cmHaesol : DEMO_USERS.cmMaru);
+  const legal = "정보주체 별도 동의(개인정보 보호법 제23조) — DEMO";
+  const locLegal = "개인위치정보 수집·이용 별도 동의(위치정보법 제18조) — DEMO";
+  const min = (m: number) => new Date(Date.now() + m * 60_000).toISOString();
+
+  // Existing open cases 1–9 get a designated location (area point) too.
+  const existing: [string, string][] = [["case_1", "rg_haesol"], ["case_2", "rg_haesol"], ["case_3", "rg_daon"], ["case_4", "rg_daon"], ["case_5", "rg_maru"], ["case_6", "rg_maru"], ["case_7", "rg_saebom"], ["case_8", "rg_saebom"], ["case_9", "rg_haesol"]];
+  for (const [i, [cid, rid]] of existing.entries()) {
+    const p = near(rid, i + 101);
+    await ins(db, "care_locations", { id: `cloc_${cid}`, tenant_id: T, case_id: cid, label: "거주지 근사 위치 (DEMO · 실제 주소 아님)", latitude: p.lat, longitude: p.lng, recorded_by: worker(rid) });
+  }
+
+  type S = { region: string; age: string; device?: "smart_ring" | "smart_watch"; loc?: "fresh" | "stale"; reading?: { hr: number; t?: number; o?: number; ago: number; event?: "sos" | "fall" }; visit?: "in_progress" | "scheduled" | "completed"; sigring?: "drop" | "steady" | "short_sleep" };
+  const R = ["rg_haesol", "rg_daon", "rg_maru", "rg_saebom"];
+  const subjects: S[] = [
+    { region: "rg_daon", age: "80대", device: "smart_watch", loc: "fresh", reading: { hr: 128, t: 38.6, o: 91, ago: 3 } },          // C-0011 vital urgent
+    { region: "rg_haesol", age: "70대", device: "smart_ring", reading: { hr: 102, t: 37.8, o: 96, ago: 12 } },                       // C-0012 vital caution
+    { region: "rg_maru", age: "80대", device: "smart_ring", reading: { hr: 74, t: 36.6, o: 97, ago: 200 } },                         // C-0013 stale reading
+    { region: "rg_saebom", age: "90대", device: "smart_watch", loc: "fresh", reading: { hr: 96, ago: 8, event: "sos" } },            // C-0014 SOS + dispatch
+    // SIGRING100 profile (연동 협의 전 가정 · docs/SIGRING_INTEGRATION.md): daily sync only, no location / fall / SOS
+    { region: "rg_haesol", age: "80대", device: "smart_ring", sigring: "drop" },                                                      // C-0015 vitality ↓ + skin temp ↑
+    { region: "rg_saebom", age: "70대", device: "smart_ring", sigring: "steady" },                                                    // C-0016 steady
+    { region: "rg_daon", age: "80대", device: "smart_ring", sigring: "short_sleep", visit: "scheduled" },                             // C-0017 steady, visit later
+  ];
+  for (let n = 4; n < 20; n++) {
+    const region = R[n % 4];
+    const hasDevice = n % 6 !== 5;
+    subjects.push({
+      region, age: ["70대", "80대", "90대"][n % 3], device: hasDevice ? (n % 2 ? "smart_watch" : "smart_ring") : undefined,
+      loc: hasDevice && n % 3 === 0 ? (n === 9 ? "stale" : "fresh") : undefined,
+      reading: hasDevice ? { hr: 64 + (n * 7) % 20, t: 36.2 + ((n * 3) % 6) / 10, o: 95 + (n % 4), ago: 2 + (n * 5) % 40 } : undefined,
+      visit: n % 5 === 1 ? "in_progress" : n % 5 === 2 ? "scheduled" : n % 5 === 3 ? "completed" : undefined,
+    });
+  }
+
+  const visitProviders: [string, string][] = [["pv_home", "home_care"], ["pv_nursing", "visiting_nursing"], ["pv_meal", "meal"], ["pv_mobility", "mobility"], ["pv_home", "housework"], ["pv_dementia", "cognitive_emotional"]];
+  for (const [k, s] of subjects.entries()) {
+    const no = 11 + k;
+    const cid = `case_${no}`;
+    const rid = `rcp_${no}`;
+    const w = worker(s.region);
+    await ins(db, "care_recipients", { id: rid, tenant_id: T, recipient_code: `R-${String(no).padStart(4, "0")}`, display_name: `가명 M${String(k + 1).padStart(2, "0")}`, age_band: s.age, region_unit_id: s.region, household_type: k % 3 ? "독거" : "부부 가구", is_synthetic: true });
+    await ins(db, "recipient_identities", { recipient_id: rid, tenant_id: T, legal_name: `합성대상자${no}`, birth_date: null, contact: null, source_basis: "DEMO 합성 데이터" });
+    await ins(db, "care_cases", { id: cid, tenant_id: T, case_code: `C-${String(no).padStart(4, "0")}`, recipient_id: rid, region_unit_id: s.region, status: "SERVICE_ACTIVE", intake_route: "outreach",
+      primary_worker_id: w, opened_at: iso(-60 + k), last_contact_at: iso(-3 - (k % 9)), next_action_at: iso(10 + (k % 12)), next_action_label: "정기 모니터링" });
+    await ins(db, "case_assignments", { id: `asg_${no}`, tenant_id: T, case_id: cid, user_id: w, assignment_role: "primary", assigned_by: DEMO_USERS.admin, assigned_at: iso(-59 + k) });
+    const home = near(s.region, k + 1);
+    await ins(db, "care_locations", { id: `cloc_${cid}`, tenant_id: T, case_id: cid, label: "거주지 근사 위치 (DEMO · 실제 주소 아님)", latitude: home.lat, longitude: home.lng, recorded_by: w });
+
+    if (s.device && s.sigring) {
+      const metrics = ["wear", "activity", "sleep", "heart_rate", "hrv", "skin_temp", "stress", "vitality"];
+      await ins(db, "wearable_consents", { id: `wcn_${no}`, tenant_id: T, case_id: cid, metrics, legal_basis: legal, consent_recorded_at: iso(-50), retention_days: 90, recorded_by: w });
+      await ins(db, "wearable_devices", { id: `wdv_${no}`, tenant_id: T, case_id: cid, consent_id: `wcn_${no}`, client_id: "ic_gaon_wear", device_ref: `SIGRING-SYN-${String(no).padStart(4, "0")}`,
+        device_kind: "smart_ring", device_profile: "sigring100", model_label: "SIGRING100 (연동 가정 · DEMO)", paired_at: iso(-30), last_received_at: iso(-0.25) });
+      const days: DailySummary[] = [];
+      for (let j = 16; j >= 1; j--) {
+        const late = s.sigring === "drop" && j <= 2;
+        days.push({
+          date: d(-j), wearMinutes: 1320 + ((j * 31) % 90), steps: late ? 1700 : 3200 + ((j * 137) % 700), activeMinutes: late ? 15 : 35 + (j % 8),
+          sleepMinutes: s.sigring === "short_sleep" ? 330 + (j % 20) : 410 + ((j * 13) % 40), sleepDeepMinutes: 70 + (j % 15), sleepRemMinutes: 80 + (j % 20),
+          restingHeartRate: late ? 74 : 63 + (j % 4), hrvRmssd: late ? 17 : 29 + (j % 5), skinTempDeviationC: late ? 1.3 : ((j % 5) - 2) / 10,
+          stressIndex: late ? 72 : 35 + (j % 10), vitalityScore: late ? 66 : 80 + (j % 5),
+        });
+      }
+      for (const r of days)
+        await ins(db, "wearable_daily_summaries", {
+          id: `wds_wdv_${no}_${r.date}`, tenant_id: T, device_id: `wdv_${no}`, case_id: cid, summary_date: r.date, wear_minutes: r.wearMinutes, steps: r.steps, active_minutes: r.activeMinutes,
+          sleep_minutes: r.sleepMinutes, resting_heart_rate: r.restingHeartRate, sleep_deep_minutes: r.sleepDeepMinutes, sleep_rem_minutes: r.sleepRemMinutes,
+          hrv_rmssd: r.hrvRmssd, skin_temp_dev_c: r.skinTempDeviationC, stress_index: r.stressIndex, vitality_score: r.vitalityScore,
+        });
+      const sigs = days.flatMap((r) => evaluateDay(r, days));
+      if (sigs.length) {
+        await ins(db, "action_tasks", { id: `tsk_wear_${no}`, tenant_id: T, case_id: cid, task_type: "wearable_check", title: `C-${String(no).padStart(4, "0")} 웨어러블 신호 확인`, due_at: d(0), status: "open", assignee_id: w });
+        for (const [i, g] of sigs.entries())
+          await ins(db, "wearable_signals", { id: `wsg_${no}_${i}`, tenant_id: T, case_id: cid, device_id: `wdv_${no}`, signal_type: g.type, signal_date: g.date, message: g.message, basis: g.basis, task_id: `tsk_wear_${no}` });
+      }
+    } else if (s.device) {
+      const metrics = ["wear", "activity", "sleep", "heart_rate", "spo2", "temperature", "fall", "sos"];
+      await ins(db, "wearable_consents", { id: `wcn_${no}`, tenant_id: T, case_id: cid, metrics, legal_basis: legal, consent_recorded_at: iso(-50), retention_days: 90, recorded_by: w });
+      await ins(db, "wearable_devices", { id: `wdv_${no}`, tenant_id: T, case_id: cid, consent_id: `wcn_${no}`, client_id: "ic_gaon_wear",
+        device_ref: `SYN-${s.device === "smart_ring" ? "RING" : "WATCH"}-${String(no).padStart(4, "0")}`, device_kind: s.device, device_profile: s.device === "smart_ring" ? "generic_ring" : "generic_watch", model_label: s.device === "smart_ring" ? "합성 스마트링 (DEMO)" : "합성 스마트워치 (DEMO)", paired_at: iso(-45), last_received_at: iso(-0.3) });
+      if (s.loc) {
+        await ins(db, "location_consents", { id: `lcn_${no}`, tenant_id: T, case_id: cid, legal_basis: locLegal, consent_recorded_at: iso(-40), retention_hours: 72, recorded_by: w });
+        const out = near(s.region, k + 50, 0.02);
+        await ins(db, "location_fixes", { id: `lfx_${no}`, tenant_id: T, case_id: cid, device_id: `wdv_${no}`, latitude: out.lat, longitude: out.lng, accuracy_m: 25, measured_at: min(s.loc === "fresh" ? -4 : -180) });
+      }
+      if (s.reading) {
+        const r = s.reading;
+        await ins(db, "wearable_readings", { id: `wrd_${no}`, tenant_id: T, case_id: cid, device_id: `wdv_${no}`, measured_at: min(-r.ago), heart_rate: r.hr, body_temp_c: r.t ?? null, spo2: r.o ?? null, event: r.event ?? null });
+        const ev = evaluateReading({ measuredAt: min(-r.ago), heartRate: r.hr, bodyTempC: r.t, spo2: r.o, event: r.event });
+        const kinds = [...ev.events.map((e) => ({ kind: e, parts: [] as string[] })), ...(ev.vital ? [ev.vital] : [])];
+        for (const a of kinds) {
+          await ins(db, "control_alerts", { id: `cal_${no}_${a.kind}`, tenant_id: T, case_id: cid, device_id: `wdv_${no}`, kind: a.kind, severity: ALERT_SEVERITY[a.kind],
+            message: alertMessage(a.kind, a.parts), opened_at: min(-r.ago), last_seen_at: min(-r.ago), ...(a.kind === "sos" ? { status: "in_progress", handled_by: DEMO_USERS.admin, handled_at: min(-r.ago + 2) } : {}) });
+        }
+        if (r.event === "sos") await ins(db, "field_dispatches", { id: `fdp_${no}`, tenant_id: T, case_id: cid, alert_id: `cal_${no}_sos`, requested_by: DEMO_USERS.admin, assignee_id: w,
+          reason: "SOS 기록 — 전화 미응답으로 현장 확인 요청 (DEMO)", status: "accepted", requested_at: min(-r.ago + 2), accepted_at: min(-r.ago + 4) });
+      }
+    }
+    if (s.visit) {
+      const [prov, type] = visitProviders[k % visitProviders.length];
+      const at = s.visit === "scheduled" ? 90 : s.visit === "in_progress" ? -30 : -150;
+      await ins(db, "service_visits", { id: `svv_${no}`, tenant_id: T, case_id: cid, provider_id: prov, service_type: type, scheduled_at: min(at), status: s.visit,
+        started_at: s.visit === "scheduled" ? null : min(at), completed_at: s.visit === "completed" ? min(at + 60) : null, staff_label: "제공기관 방문인력 (DEMO)" });
+    }
+  }
+  // Existing active services also have today's visits.
+  await ins(db, "service_visits", { id: "svv_3", tenant_id: T, case_id: "case_3", service_referral_id: "sr_1", provider_id: "pv_meal", service_type: "meal", scheduled_at: min(-60), status: "completed", started_at: min(-60), completed_at: min(-45), staff_label: "식사 배달 (DEMO)" });
+  await ins(db, "service_visits", { id: "svv_8", tenant_id: T, case_id: "case_8", service_referral_id: "sr_6", provider_id: "pv_meal", service_type: "meal", scheduled_at: min(120), status: "scheduled", staff_label: "식사 배달 (DEMO)" });
+  await db.query(`UPDATE id_counters SET value = $2 WHERE tenant_id = $1 AND prefix = $3`, [T, 10 + subjects.length, `CASE-${new Date().getFullYear()}`]);
 }

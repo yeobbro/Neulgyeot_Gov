@@ -34,6 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const staff = actor.roles.includes("municipal_admin") || actor.roles.includes("case_manager");
   if (staff) {
     items.push(
+      { href: "/control", label: "통합 관제", group: "업무" },
       { href: "/dashboard", label: "통합 현황", group: "업무" },
       { href: "/referrals", label: "병원 연계 접수함", count: counts.referrals, group: "업무" },
       { href: "/cases", label: "사례관리", group: "업무" },

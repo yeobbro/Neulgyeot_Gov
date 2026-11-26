@@ -11,7 +11,7 @@ export type DeviceKind = (typeof DEVICE_KINDS)[number];
 export const DEVICE_KIND_LABEL: Record<DeviceKind, string> = { smart_ring: "스마트링", smart_watch: "스마트워치" };
 
 /** Consent categories. `wear` is required: without it no other metric can be interpreted. */
-export const WEARABLE_METRICS = ["wear", "activity", "sleep", "heart_rate", "spo2", "fall", "sos"] as const;
+export const WEARABLE_METRICS = ["wear", "activity", "sleep", "heart_rate", "spo2", "temperature", "fall", "sos", "hrv", "skin_temp", "stress", "vitality"] as const;
 export type WearableMetric = (typeof WEARABLE_METRICS)[number];
 export const WEARABLE_METRIC_LABEL: Record<WearableMetric, string> = {
   wear: "착용 시간",
@@ -19,6 +19,11 @@ export const WEARABLE_METRIC_LABEL: Record<WearableMetric, string> = {
   sleep: "수면 시간",
   heart_rate: "심박(안정 시·최저·최고)",
   spo2: "산소포화도(최저)",
+  temperature: "체온(기기 측정값, 참고용)",
+  hrv: "심박변이도(HRV)",
+  skin_temp: "피부 온도 변화(평소 대비)",
+  stress: "스트레스 지수(기기 산출)",
+  vitality: "종합 활력 지수(기기 산출)",
   fall: "낙상 감지 기록",
   sos: "SOS 버튼 기록",
 };
@@ -35,6 +40,12 @@ export const FIELD_METRIC = {
   spo2Min: "spo2",
   fallEvents: "fall",
   sosEvents: "sos",
+  sleepDeepMinutes: "sleep",
+  sleepRemMinutes: "sleep",
+  hrvRmssd: "hrv",
+  skinTempDeviationC: "skin_temp",
+  stressIndex: "stress",
+  vitalityScore: "vitality",
 } as const satisfies Record<string, WearableMetric>;
 export type SummaryField = keyof typeof FIELD_METRIC;
 
@@ -50,6 +61,14 @@ export type DailySummary = {
   spo2Min?: number | null;
   fallEvents?: number | null;
   sosEvents?: number | null;
+  /** contract 0.2 (ring-type devices, e.g. SIGRING100 — docs/SIGRING_INTEGRATION.md) */
+  sleepDeepMinutes?: number | null;
+  sleepRemMinutes?: number | null;
+  hrvRmssd?: number | null;
+  /** deviation from the person's own usual skin temperature (device-computed), NOT body temperature */
+  skinTempDeviationC?: number | null;
+  stressIndex?: number | null;
+  vitalityScore?: number | null;
 };
 
 /** Fields present in a summary whose consent category was not granted. */
@@ -66,6 +85,9 @@ export const SIGNAL_TYPES = [
   "activity_drop",
   "sleep_change",
   "resting_hr_change",
+  "vitality_drop",
+  "hrv_drop",
+  "skin_temp_rise",
 ] as const;
 export type SignalType = (typeof SIGNAL_TYPES)[number];
 export const SIGNAL_LABEL: Record<SignalType, string> = {
@@ -77,10 +99,14 @@ export const SIGNAL_LABEL: Record<SignalType, string> = {
   activity_drop: "활동량 감소",
   sleep_change: "수면 시간 변화",
   resting_hr_change: "안정 시 심박 변화",
+  vitality_drop: "활력 지수 하락",
+  hrv_drop: "심박변이도(HRV) 감소",
+  skin_temp_rise: "피부 온도 상승(평소 대비)",
 };
 /** Device-reported events and missing data are checked the same day; baseline changes the next day. */
 export const SIGNAL_DUE_DAYS: Record<SignalType, number> = {
   fall_reported: 0, sos_reported: 0, spo2_low_reported: 0, no_data: 1, low_wear: 1, activity_drop: 1, sleep_change: 1, resting_hr_change: 1,
+  vitality_drop: 1, hrv_drop: 1, skin_temp_rise: 0,
 };
 
 export const SIGNAL_STATUSES = ["open", "acknowledged", "dismissed"] as const;
@@ -99,6 +125,10 @@ export const SIGNAL_RULES = {
   restingHrChangeBpm: 15,
   spo2LowPercent: 90,
   noDataHours: 48,
+  vitalityDropPoints: 10,
+  hrvDropRatio: 0.7,
+  hrvMinBaselineMs: 15,
+  skinTempRiseC: 1.0,
 } as const;
 
 export type SignalBasis = { metric?: string; value?: number; baseline?: number; threshold?: number; baselineDays?: number; hours?: number };
@@ -114,7 +144,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
 const num = (n: number) => n.toLocaleString("ko-KR");
 const dayDiff = (a: string, b: string) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000);
 
-export type Baseline = { days: number; steps: number | null; sleepMinutes: number | null; restingHeartRate: number | null };
+export type Baseline = { days: number; steps: number | null; sleepMinutes: number | null; restingHeartRate: number | null; vitalityScore: number | null; hrvRmssd: number | null };
 
 /** Median of well-worn days in the window before `date`. `days` < baselineMinDays → no comparison signals. */
 export function baselineFor(history: DailySummary[], date: string, rules = SIGNAL_RULES): Baseline {
@@ -126,7 +156,10 @@ export function baselineFor(history: DailySummary[], date: string, rules = SIGNA
     const xs = window.map(f).filter((v): v is number => typeof v === "number");
     return xs.length >= rules.baselineMinDays ? median(xs) : null;
   };
-  return { days: window.length, steps: pick((h) => h.steps), sleepMinutes: pick((h) => h.sleepMinutes), restingHeartRate: pick((h) => h.restingHeartRate) };
+  return {
+    days: window.length, steps: pick((h) => h.steps), sleepMinutes: pick((h) => h.sleepMinutes), restingHeartRate: pick((h) => h.restingHeartRate),
+    vitalityScore: pick((h) => h.vitalityScore), hrvRmssd: pick((h) => h.hrvRmssd),
+  };
 }
 
 /** Signals for one day. `history` may include the day itself; only earlier days form the baseline. */
@@ -157,6 +190,16 @@ export function evaluateDay(day: DailySummary, history: DailySummary[], rules = 
   if (typeof day.restingHeartRate === "number" && b.restingHeartRate !== null && Math.abs(day.restingHeartRate - b.restingHeartRate) >= rules.restingHrChangeBpm)
     add("resting_hr_change", { metric: "restingHeartRate", value: day.restingHeartRate, baseline: b.restingHeartRate, threshold: rules.restingHrChangeBpm, baselineDays: b.days },
       `안정 시 심박 ${day.restingHeartRate}bpm, 평소 ${b.restingHeartRate}bpm 대비 ${signed(day.restingHeartRate - b.restingHeartRate)}입니다.`);
+  if (typeof day.vitalityScore === "number" && b.vitalityScore !== null && b.vitalityScore - day.vitalityScore >= rules.vitalityDropPoints)
+    add("vitality_drop", { metric: "vitalityScore", value: day.vitalityScore, baseline: b.vitalityScore, threshold: rules.vitalityDropPoints, baselineDays: b.days },
+      `기기 활력 지수 ${day.vitalityScore}점, 평소 ${b.vitalityScore}점보다 ${b.vitalityScore - day.vitalityScore}점 낮습니다. 컨디션 확인이 필요합니다.`);
+  if (typeof day.hrvRmssd === "number" && b.hrvRmssd !== null && b.hrvRmssd >= rules.hrvMinBaselineMs && day.hrvRmssd < b.hrvRmssd * rules.hrvDropRatio)
+    add("hrv_drop", { metric: "hrvRmssd", value: day.hrvRmssd, baseline: b.hrvRmssd, threshold: rules.hrvDropRatio, baselineDays: b.days },
+      `심박변이도(RMSSD) ${day.hrvRmssd}ms, 평소 ${b.hrvRmssd}ms의 ${Math.round((day.hrvRmssd / b.hrvRmssd) * 100)}%입니다. 피로·수면 부족·몸살 등 여부를 확인하세요.`);
+  // The device already expresses skin temperature relative to the person's usual value; no baseline window needed.
+  if (typeof day.skinTempDeviationC === "number" && day.skinTempDeviationC >= rules.skinTempRiseC)
+    add("skin_temp_rise", { metric: "skinTempDeviationC", value: day.skinTempDeviationC, threshold: rules.skinTempRiseC },
+      `손가락 피부 온도가 평소보다 ${day.skinTempDeviationC.toFixed(1)}℃ 높습니다(체온 아님). 발열 등 불편 여부를 전화로 확인하세요.`);
   return out;
 }
 

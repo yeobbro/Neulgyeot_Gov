@@ -4,6 +4,7 @@ import {
   DEVICE_KINDS, DEVICE_KIND_LABEL, SIGNAL_LABEL, SIGNAL_STATUS_LABEL, WEARABLE_METRICS, WEARABLE_METRIC_LABEL,
   type DeviceKind, type SignalStatus, type SignalType, type WearableMetric,
 } from "@/lib/domain/wearable";
+import { DEVICE_PROFILES, DEVICE_PROFILE_IDS, profileOf } from "@/lib/domain/devices";
 import { fmtDate, fmtDateTime } from "@/lib/format";
 import type { getWearableOverview } from "@/lib/server/services/wearables";
 
@@ -20,6 +21,7 @@ export function WearableTab({ caseId, data, gateways, canWrite }: { caseId: stri
   const granted = new Set(consent?.metrics ?? data.consents[0]?.metrics ?? []);
   const cell = (metric: WearableMetric, text: string) => (granted.has(metric) ? text : <span className="muted">미동의</span>);
   const open = data.signals.filter((s) => s.status === "open");
+  const ringCols = ["vitality", "hrv", "skin_temp"].some((m) => granted.has(m as WearableMetric));
 
   return (
     <div className="stack">
@@ -57,6 +59,10 @@ export function WearableTab({ caseId, data, gateways, canWrite }: { caseId: stri
           {device ? (
             <dl className="kv">
               <dt>기기</dt><dd>{DEVICE_KIND_LABEL[device.device_kind as DeviceKind]} · {device.model_label || "모델 미기재"} <Badge tone={device.status === "active" ? "green" : "gray"}>{device.status === "active" ? "수신 중" : "일시중지"}</Badge></dd>
+              <dt>기기 프로필</dt><dd>{profileOf(device.device_profile).label}
+                {profileOf(device.device_profile).notes.length > 0 && (
+                  <ul className="muted" style={{ margin: "4px 0 0", paddingLeft: 16, fontSize: 12 }}>{profileOf(device.device_profile).notes.map((t) => <li key={t}>{t}</li>)}</ul>
+                )}</dd>
               <dt>기기 참조값</dt><dd><code>{device.device_ref}</code></dd>
               <dt>수집 게이트웨이</dt><dd>{device.gateway_name}</dd>
               <dt>마지막 수신</dt><dd>{device.last_received_at ? fmtDateTime(device.last_received_at) : "수신 기록 없음"}</dd>
@@ -81,6 +87,8 @@ export function WearableTab({ caseId, data, gateways, canWrite }: { caseId: stri
               <ApiForm action={`/api/cases/${caseId}/wearables`} submitLabel="기기 등록" successMessage="등록했습니다." testId="wearable-register" extra={{ retentionDays: 90 }} fields={[
                 { name: "clientId", label: "수집 게이트웨이", type: "select", required: true, options: gateways.map((g) => ({ value: g.id, label: g.source_org_name })) },
                 { name: "deviceKind", label: "기기 종류", type: "select", required: true, options: DEVICE_KINDS.map((k) => ({ value: k, label: DEVICE_KIND_LABEL[k] })) },
+                { name: "deviceProfile", label: "기기 프로필", type: "select", required: true, help: "프로필이 측정하지 않는 항목은 동의 항목으로 고를 수 없습니다.",
+                  options: DEVICE_PROFILE_IDS.map((id) => ({ value: id, label: `${DEVICE_PROFILES[id].label} — ${DEVICE_PROFILES[id].metrics.length}개 항목` })) },
                 { name: "deviceRef", label: "기기 참조값", type: "text", required: true, maxLength: 64, help: "게이트웨이가 발급한 값" },
                 { name: "modelLabel", label: "모델명", type: "text", maxLength: 80 },
                 { name: "metrics", label: "동의 항목 (착용 시간 필수)", type: "checks", full: true, defaultValue: ["wear"], options: WEARABLE_METRICS.map((m) => ({ value: m, label: WEARABLE_METRIC_LABEL[m] })) },
@@ -96,7 +104,7 @@ export function WearableTab({ caseId, data, gateways, canWrite }: { caseId: stri
       <Panel title="최근 14일 요약" id="wear-days" note="'미동의'는 수신하지 않는 항목, '—'는 기기가 보내지 않은 값입니다.">
         {data.summaries.length === 0 ? <Empty>수신된 요약 없음</Empty> : (
           <div className="table-wrap" tabIndex={0} role="region" aria-label="표 영역 (가로 스크롤)"><table className="data">
-            <thead><tr><th scope="col">날짜</th><th scope="col">착용</th><th scope="col">걸음</th><th scope="col">활동</th><th scope="col">수면</th><th scope="col">안정 시 심박</th><th scope="col">최저 SpO₂</th><th scope="col">낙상/SOS 기록</th></tr></thead>
+            <thead><tr><th scope="col">날짜</th><th scope="col">착용</th><th scope="col">걸음</th><th scope="col">활동</th><th scope="col">수면</th><th scope="col">안정 시 심박</th><th scope="col">최저 SpO₂</th>{ringCols && <><th scope="col">활력 지수</th><th scope="col">HRV</th><th scope="col">피부 온도</th></>}<th scope="col">낙상/SOS 기록</th></tr></thead>
             <tbody>{data.summaries.map((s) => (
               <tr key={`${s.deviceId}-${s.date}`}>
                 <td>{s.date}</td>
@@ -106,6 +114,11 @@ export function WearableTab({ caseId, data, gateways, canWrite }: { caseId: stri
                 <td>{cell("sleep", hm(s.sleepMinutes))}</td>
                 <td>{cell("heart_rate", n(s.restingHeartRate, "bpm"))}</td>
                 <td>{cell("spo2", n(s.spo2Min, "%"))}</td>
+                {ringCols && <>
+                  <td>{cell("vitality", n(s.vitalityScore))}</td>
+                  <td>{cell("hrv", n(s.hrvRmssd, "ms"))}</td>
+                  <td>{cell("skin_temp", typeof s.skinTempDeviationC === "number" ? `${s.skinTempDeviationC > 0 ? "+" : ""}${s.skinTempDeviationC.toFixed(1)}℃` : "—")}</td>
+                </>}
                 <td>{granted.has("fall") || granted.has("sos") ? `${s.fallEvents ?? "—"} / ${s.sosEvents ?? "—"}` : <span className="muted">미동의</span>}</td>
               </tr>
             ))}</tbody>

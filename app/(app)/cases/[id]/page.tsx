@@ -21,6 +21,8 @@ import { listDraftGroups } from "@/lib/server/services/ai-review";
 import { listCaseManagers } from "@/lib/server/services/admin";
 import { getWearableOverview, listWearableGateways } from "@/lib/server/services/wearables";
 import { WearableTab } from "@/components/WearableTab";
+import { LocationPanel } from "@/components/LocationPanel";
+import { getLocationSettings } from "@/lib/server/services/control";
 import { SIGNAL_LABEL, SIGNAL_STATUS_LABEL, type SignalStatus, type SignalType } from "@/lib/domain/wearable";
 
 export const metadata = { title: "사례 상세" };
@@ -48,6 +50,7 @@ export default async function CaseDetail({ params, searchParams }: { params: Pro
     if (tab === "wearable") {
       out.wearable = await getWearableOverview(tx, actor, id);
       out.gateways = await listWearableGateways(tx);
+      out.location = await getLocationSettings(tx, actor, id);
     }
     if (tab === "records") out.records = await listRecords(tx, actor, id);
     if (tab === "timeline") out.timeline = await caseTimeline(tx, actor, id);
@@ -335,6 +338,12 @@ export default async function CaseDetail({ params, searchParams }: { params: Pro
 
       {tab === "wearable" && (
         <WearableTab caseId={id} data={data.wearable as Awaited<ReturnType<typeof getWearableOverview>>} gateways={data.gateways as { id: string; source_org_name: string }[]} canWrite={canWrite} />
+      )}
+      {tab === "wearable" && (
+        <div style={{ marginTop: 16 }}>
+          <LocationPanel caseId={id} data={data.location as Awaited<ReturnType<typeof getLocationSettings>>} canWrite={canWrite}
+            hasDevice={(data.wearable as Awaited<ReturnType<typeof getWearableOverview>>).devices.some((d) => d.status === "active")} />
+        </div>
       )}
 
       {tab === "ai" && (

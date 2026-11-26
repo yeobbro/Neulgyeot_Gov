@@ -20,7 +20,9 @@ export const AUDIT_ACTIONS = [
   "ai.generate", "ai.approve", "ai.discard",
   "ai.job.enqueue", "ai.job.complete", "ai.job.retry", "ai.job.fail", "ai.job.cancel", "ai.job.stale", "ai.job.defer", "ai.job.release",
   "ai.select", "ai.hold",
-  "wearable.register", "wearable.consent_withdraw", "wearable.intake", "wearable.signal_review", "wearable.view",
+  "wearable.register", "wearable.consent_withdraw", "wearable.intake", "wearable.signal_review", "wearable.view", "wearable.readings_intake",
+  "control.view", "control.alert_update", "control.dispatch_request", "control.dispatch_update",
+  "location.intake", "location.consent_register", "location.consent_withdraw", "location.designated_update",
   "settings.update", "access.denied",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

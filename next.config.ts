@@ -6,7 +6,7 @@ const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
+  "img-src 'self' data: https://tile.openstreetmap.org",
   "frame-src https://www.openstreetmap.org",
   "font-src 'self'",
   "connect-src 'self'",
