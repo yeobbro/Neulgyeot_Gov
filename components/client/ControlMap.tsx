@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
-  LOCATION_REASON_LABEL, SERVICE_GROUPS, SUBJECT_STATUSES, SUBJECT_STATUS_COLOR, SUBJECT_STATUS_LABEL, serviceGroupOf,
+  LOCATION_REASON_LABEL, SERVICE_GROUPS, SUBJECT_STATUSES, SUBJECT_STATUS_CHIP, SUBJECT_STATUS_COLOR, SUBJECT_STATUS_LABEL, serviceGroupOf,
   type ServiceGroupKey, type SubjectStatus,
 } from "@/lib/domain/control";
 import type { Subject } from "@/lib/server/services/control";
@@ -205,7 +205,7 @@ function Popup({ s, x, y, live, candidates, canDispatch, onClose }: { s: Subject
       <button type="button" className="ctl-x" onClick={onClose} aria-label="닫기">×</button>
       <div className="ctl-pop-head">
         <strong>{s.name}</strong> <span className="muted">({s.ageBand ?? "연령 미상"})</span>
-        <span className="ctl-chip" style={{ background: SUBJECT_STATUS_COLOR[s.status] }}>{SUBJECT_STATUS_LABEL[s.status]}</span>
+        <span className="ctl-chip" style={{ background: SUBJECT_STATUS_CHIP[s.status] }}>{SUBJECT_STATUS_LABEL[s.status]}</span>
       </div>
       <div className="muted ctl-pop-sub">{s.caseCode} · {s.region} · 담당 {s.workerName ?? "미배정"}</div>
       <div className="muted ctl-pop-sub">

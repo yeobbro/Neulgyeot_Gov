@@ -3,7 +3,7 @@ import { Badge, Empty } from "@/components/ui";
 import { ControlMap } from "@/components/client/ControlMap";
 import { AlertActions, AutoRefresh, DispatchActions } from "@/components/client/ControlActions";
 import {
-  ALERT_STATUS_LABEL, DISPATCH_STATUS_LABEL, PROVISIONAL_VITAL_THRESHOLDS, SUBJECT_STATUSES, SUBJECT_STATUS_COLOR, SUBJECT_STATUS_LABEL,
+  ALERT_STATUS_LABEL, DISPATCH_STATUS_LABEL, PROVISIONAL_VITAL_THRESHOLDS, SUBJECT_STATUSES, SUBJECT_STATUS_CHIP, SUBJECT_STATUS_COLOR, SUBJECT_STATUS_LABEL,
   type AlertStatus, type DispatchStatus, type SubjectStatus,
 } from "@/lib/domain/control";
 import { isAdmin } from "@/lib/server/authz";
@@ -107,19 +107,19 @@ export default async function ControlPage({ searchParams }: { searchParams: Prom
           <section className="panel ctl-card" aria-labelledby="watch-h">
             <div className="ctl-card-head"><h2 id="watch-h">주요 대상자 실시간 모니터링</h2><Link href="/cases">전체보기 ›</Link></div>
             {watch.length === 0 ? <Empty>모니터링 대상 없음</Empty> : (
-              <table className="ctl-table">
+              <div className="ctl-scroll" tabIndex={0} role="region" aria-label="표 영역 (가로 스크롤)"><table className="ctl-table">
                 <thead><tr><th scope="col">대상자</th><th scope="col">상태</th><th scope="col">측정값</th><th scope="col">위치/서비스</th></tr></thead>
                 <tbody>
                   {watch.map((s) => (
                     <tr key={s.caseId}>
                       <td><Link href={`/control?focus=${s.caseId}`}>{s.name}</Link> <small className="muted">({s.ageBand ?? "—"})</small></td>
-                      <td><span className="ctl-chip" style={{ background: SUBJECT_STATUS_COLOR[s.status] }}>{SUBJECT_STATUS_LABEL[s.status]}</span></td>
+                      <td><span className="ctl-chip" style={{ background: SUBJECT_STATUS_CHIP[s.status] }}>{SUBJECT_STATUS_LABEL[s.status]}</span></td>
                       <td><Vitals s={s} /></td>
                       <td><small>{s.region}<br /><span className="muted">{s.visitInProgress ? "방문 서비스 중" : s.location.mode === "current" ? "실시간 위치" : "지정 위치"}</span></small></td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </section>
         </div>
@@ -167,7 +167,7 @@ export default async function ControlPage({ searchParams }: { searchParams: Prom
           <span className="muted">하루 단위로 동기화되는 기기(예: 시그링)의 어제 요약을 본인 평소(최근 14일 중앙값)와 비교합니다. 진단이 아닙니다.</span>
         </div>
         {o.morning.length === 0 ? <Empty>일 요약 기기 착용자가 없습니다.</Empty> : (
-          <table className="ctl-table" data-testid="morning-summary">
+          <div className="ctl-scroll" tabIndex={0} role="region" aria-label="표 영역 (가로 스크롤)"><table className="ctl-table" data-testid="morning-summary">
             <thead><tr><th scope="col">대상자</th><th scope="col">기기</th><th scope="col">요약일</th><th scope="col">활력 지수 (평소)</th><th scope="col">수면 (평소)</th><th scope="col">걸음 (평소)</th><th scope="col">피부 온도</th><th scope="col">확인</th></tr></thead>
             <tbody>
               {o.morning.map((m) => {
@@ -182,12 +182,12 @@ export default async function ControlPage({ searchParams }: { searchParams: Prom
                     <td>{hm(m.sleepMinutes)} <small className="muted">({hm(m.sleepUsual)})</small></td>
                     <td>{m.steps?.toLocaleString("ko-KR") ?? "—"} <small className="muted">({m.stepsUsual?.toLocaleString("ko-KR") ?? "—"})</small></td>
                     <td className={m.skinTempDeviationC != null && m.skinTempDeviationC >= 1 ? "amber" : ""}>{m.skinTempDeviationC != null ? `${m.skinTempDeviationC > 0 ? "+" : ""}${m.skinTempDeviationC.toFixed(1)}℃` : "—"}</td>
-                    <td>{m.openSignals > 0 ? <span className="ctl-chip" style={{ background: SUBJECT_STATUS_COLOR.caution }}>신호 {m.openSignals}건</span> : <span className="muted">평소와 비슷</span>}</td>
+                    <td>{m.openSignals > 0 ? <span className="ctl-chip" style={{ background: SUBJECT_STATUS_CHIP.caution }}>신호 {m.openSignals}건</span> : <span className="muted">평소와 비슷</span>}</td>
                   </tr>
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         )}
       </section>
 
@@ -202,22 +202,22 @@ export default async function ControlPage({ searchParams }: { searchParams: Prom
           </div>
         )}
         <div className="ctl-staff">
-          <table className="ctl-table">
+          <div className="ctl-scroll" tabIndex={0} role="region" aria-label="표 영역 (가로 스크롤)"><table className="ctl-table">
             <thead><tr><th scope="col">담당자</th><th scope="col">담당 대상자</th><th scope="col">긴급/주의</th><th scope="col">진행 중 출동</th><th scope="col">오늘 완료</th></tr></thead>
             <tbody>
               {o.staff.map((u) => (
                 <tr key={u.id}><td>{u.name}</td><td>{u.subjects}명</td><td><span className="red">{u.urgent}</span> / <span className="amber">{u.caution}</span></td><td>{u.activeDispatches}건</td><td>{u.completedToday}건</td></tr>
               ))}
             </tbody>
-          </table>
-          <table className="ctl-table">
+          </table></div>
+          <div className="ctl-scroll" tabIndex={0} role="region" aria-label="표 영역 (가로 스크롤)"><table className="ctl-table">
             <thead><tr><th scope="col">제공기관 (오늘 방문)</th><th scope="col">예정</th><th scope="col">방문 중</th><th scope="col">완료</th><th scope="col">미방문</th></tr></thead>
             <tbody>
               {o.providerVisits.length === 0 ? <tr><td colSpan={5} className="muted">오늘 방문 일정 없음</td></tr> : o.providerVisits.map((p) => (
                 <tr key={p.provider}><td>{p.provider}</td><td>{p.scheduled}</td><td>{p.inProgress}</td><td>{p.completed}</td><td>{p.missed}</td></tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
         {o.dispatches.length > 0 && (
           <p className="muted" style={{ marginTop: 8 }}>오늘 출동: {o.dispatches.map((d) => `${d.caseCode} ${d.assigneeName} (${DISPATCH_STATUS_LABEL[d.status as DispatchStatus]})`).join(" · ")}</p>

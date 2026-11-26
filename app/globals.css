@@ -325,10 +325,12 @@ ol.timeline time { color: var(--text-3); font-size: 12px; display: block; }
 .ctl-svc-item .l { font-size: 12px; font-weight: 600; color: var(--text-2); }
 .ctl-svc-item .v { font-size: 22px; font-weight: 800; }
 .ctl-svc-item .v small { font-size: 12px; font-weight: 600; margin-left: 2px; }
+.ctl-scroll { overflow-x: auto; max-width: 100%; }
+.ctl-card, .ctl-side, .ctl-main > *, .ctl-bottom > * { min-width: 0; }
 .ctl-staff { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .ctl-mine { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; background: var(--blue-soft); border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; }
 .ctl-mine-item { display: inline-flex; gap: 6px; align-items: center; }
-.red { color: var(--red); font-weight: 700; } .amber { color: #b26b00; font-weight: 700; }
+.red { color: var(--red); font-weight: 700; } .amber { color: #8a5300; font-weight: 700; }
 @media (max-width: 1280px) {
   .ctl-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ctl-main, .ctl-bottom { grid-template-columns: minmax(0, 1fr); }

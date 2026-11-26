@@ -27,6 +27,15 @@ export const SUBJECT_STATUS_COLOR: Record<SubjectStatus, string> = {
   unlinked: "#8a93a3",
 };
 
+/** Badge backgrounds behind white text: darker shades so contrast is ≥ 4.5:1 (WCAG AA). Markers keep the brighter colors. */
+export const SUBJECT_STATUS_CHIP: Record<SubjectStatus, string> = {
+  urgent: "#b42318",
+  caution: "#8a5300",
+  in_service: "#1f5fbf",
+  normal: "#1d7a3d",
+  unlinked: "#5b6474",
+};
+
 /** PROVISIONAL — 의료진 검토 전 임시 기준. Replace via clinical review before operation. */
 export const PROVISIONAL_VITAL_THRESHOLDS = {
   reviewed: false,
