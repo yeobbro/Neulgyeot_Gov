@@ -6,6 +6,7 @@ import {
   ALERT_STATUS_LABEL, DISPATCH_STATUS_LABEL, PROVISIONAL_VITAL_THRESHOLDS, SUBJECT_STATUSES, SUBJECT_STATUS_CHIP, SUBJECT_STATUS_COLOR, SUBJECT_STATUS_LABEL,
   type AlertStatus, type DispatchStatus, type SubjectStatus,
 } from "@/lib/domain/control";
+import { fmtDateTime } from "@/lib/format";
 import { isAdmin } from "@/lib/server/authz";
 import { withPage } from "@/lib/server/page";
 import { controlOverview, dispatchCandidates, type Subject } from "@/lib/server/services/control";
@@ -66,7 +67,7 @@ export default async function ControlPage({ searchParams }: { searchParams: Prom
       <div className="ctl-head">
         <div>
           <h1>통합 관제</h1>
-          <p className="muted">돌봄 대상자 위치·상태 통합 현황 · {admin ? "지자체 전체" : "담당 권역"} · 기준 {new Date(o.asOf).toLocaleString("ko-KR")}</p>
+          <p className="muted">돌봄 대상자 위치·상태 통합 현황 · {admin ? "지자체 전체" : "담당 권역"} · 기준 {fmtDateTime(o.asOf)}</p>
         </div>
         <AutoRefresh seconds={60} />
       </div>
