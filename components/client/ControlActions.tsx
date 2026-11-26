@@ -20,7 +20,7 @@ export function AutoRefresh({ seconds = 60 }: { seconds?: number }) {
     <span className="ctl-refresh" aria-live="polite">
       {seconds}초마다 자동 갱신 · 마지막{" "}
       {/* server and client clocks differ by a moment on first render */}
-      <time suppressHydrationWarning>{last.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
+      <time suppressHydrationWarning>{last.toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
       <button type="button" className="btn btn-sm" onClick={() => { router.refresh(); setLast(new Date()); }}>지금 갱신</button>
     </span>
   );

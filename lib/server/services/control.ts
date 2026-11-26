@@ -22,6 +22,8 @@ import { notify } from "./common";
 
 const OPEN_CASE = `c.status NOT IN ('CLOSED', 'WITHDRAWN')`;
 const iso = (v: string | Date | null | undefined) => (v ? new Date(v).toISOString() : null);
+/** Calendar day in Korea — "today" must not follow the server's UTC clock. */
+const kstDate = (v: string | Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date(v));
 
 export type Subject = {
   caseId: string; caseCode: string; name: string; ageBand: string | null; region: string; regionId: string;
@@ -64,9 +66,9 @@ export async function controlOverview(tx: Db, actor: Actor, now = new Date()) {
     q<any>(`SELECT case_id, signal_type, message, created_at, id FROM wearable_signals WHERE status = 'open' AND case_id = ANY($1) ORDER BY created_at DESC`),
     q<any>(`SELECT case_id, service_type, status FROM service_referrals WHERE status IN ('SCHEDULED', 'STARTED') AND case_id = ANY($1)`),
     q<any>(`SELECT v.case_id, v.id, v.service_type, v.status, v.scheduled_at, v.provider_id, p.name AS provider_name FROM service_visits v
-             JOIN service_providers p ON p.id = v.provider_id WHERE v.case_id = ANY($1) AND v.scheduled_at::date = current_date`),
+             JOIN service_providers p ON p.id = v.provider_id WHERE v.case_id = ANY($1) AND (v.scheduled_at AT TIME ZONE 'Asia/Seoul')::date = (now() AT TIME ZONE 'Asia/Seoul')::date`),
     q<any>(`SELECT f.id, f.case_id, f.status, f.assignee_id, f.requested_at, u.display_name AS assignee_name FROM field_dispatches f
-             JOIN users u ON u.id = f.assignee_id WHERE f.case_id = ANY($1) AND (f.status IN ('requested','accepted','on_site') OR f.requested_at::date = current_date)`),
+             JOIN users u ON u.id = f.assignee_id WHERE f.case_id = ANY($1) AND (f.status IN ('requested','accepted','on_site') OR (f.requested_at AT TIME ZONE 'Asia/Seoul')::date = (now() AT TIME ZONE 'Asia/Seoul')::date)`),
   ]);
   const [mDes, mFix, mDev, mRead, mAl, mSig, mSvc, mVis, mDis] = [designated, fixes, devices, readings, alerts, signals, services, visits, dispatches].map(by);
   const consentSet = new Set(consents.map((c) => c.case_id));
@@ -200,7 +202,7 @@ export async function controlOverview(tx: Db, actor: Actor, now = new Date()) {
     kpis: {
       total: subjects.length, monitored, caution: statusCounts.caution, urgent: statusCounts.urgent,
       servicesActive: services.filter((s) => s.status === "STARTED").length,
-      visitsToday: visits.length + dispatches.filter((d) => new Date(d.requested_at).toDateString() === now.toDateString()).length,
+      visitsToday: visits.length + dispatches.filter((d) => kstDate(d.requested_at) === kstDate(now)).length,
     },
   };
 }
