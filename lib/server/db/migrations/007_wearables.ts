@@ -9,10 +9,15 @@
  * All four tables are tenant-isolated by RLS (fail closed). The app role may not DELETE them (retention purge is
  * an owner-run batch). action_tasks gains the 'wearable_check' task type.
  */
-import { SIGNAL_STATUSES, SIGNAL_TYPES, DEVICE_KINDS, WEARABLE_METRICS } from "../../../domain/wearable";
+import { SIGNAL_STATUSES, DEVICE_KINDS } from "../../../domain/wearable";
 import { TASK_TYPES, list } from "../../../domain/enums";
 
 export const version = "007_wearables";
+
+/** Frozen: the consent categories as of 007. Later categories (e.g. temperature in 008) are added by their own migration. */
+export const METRICS_007 = ["wear", "activity", "sleep", "heart_rate", "spo2", "fall", "sos"] as const;
+/** Frozen: the signal types as of 007 (later types are added by their own migration). */
+export const SIGNAL_TYPES_007 = ["fall_reported", "sos_reported", "spo2_low_reported", "no_data", "low_wear", "activity_drop", "sleep_change", "resting_hr_change"] as const;
 
 const TABLES = ["wearable_consents", "wearable_devices", "wearable_daily_summaries", "wearable_signals"];
 const rls = (t: string) => `
@@ -27,7 +32,7 @@ CREATE TABLE wearable_consents (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),
   case_id text NOT NULL,
-  metrics text[] NOT NULL CHECK (metrics <@ ARRAY[${list(WEARABLE_METRICS)}]::text[] AND 'wear' = ANY(metrics)),
+  metrics text[] NOT NULL CHECK (metrics <@ ARRAY[${list(METRICS_007)}]::text[] AND 'wear' = ANY(metrics)),
   legal_basis text NOT NULL CHECK (char_length(legal_basis) BETWEEN 2 AND 200),
   consent_recorded_at timestamptz NOT NULL,
   retention_days integer NOT NULL CHECK (retention_days BETWEEN 1 AND 1095),
@@ -89,7 +94,7 @@ CREATE TABLE wearable_signals (
   tenant_id text NOT NULL REFERENCES tenants(id),
   case_id text NOT NULL,
   device_id text NOT NULL,
-  signal_type text NOT NULL CHECK (signal_type IN (${list(SIGNAL_TYPES)})),
+  signal_type text NOT NULL CHECK (signal_type IN (${list(SIGNAL_TYPES_007)})),
   signal_date date NOT NULL,
   message text NOT NULL CHECK (char_length(message) <= 300),
   basis jsonb NOT NULL DEFAULT '{}'::jsonb,

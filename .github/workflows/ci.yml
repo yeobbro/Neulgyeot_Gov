@@ -22,7 +22,7 @@ jobs:
           for i in $(seq 1 30); do curl -sf http://localhost:3100/api/health && break; sleep 2; done
           npm run test:e2e
   postgres:
-    # real PostgreSQL 16: migrations 001–007, RLS, permissions, concurrency, worker processes (synthetic data only)
+    # real PostgreSQL 16: migrations 001–009, RLS, permissions, concurrency, worker processes (synthetic data only)
     runs-on: ubuntu-latest
     services:
       postgres:

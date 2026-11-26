@@ -10,9 +10,10 @@
  */
 import { z } from "zod";
 import {
-  DEVICE_KINDS, SIGNAL_DUE_DAYS, WEARABLE_METRICS, evaluateDay, fieldsOutsideConsent, noDataSignal,
-  type DailySummary, type Signal, type SignalType,
+  DEVICE_KINDS, SIGNAL_DUE_DAYS, WEARABLE_METRICS, WEARABLE_METRIC_LABEL, evaluateDay, fieldsOutsideConsent, noDataSignal,
+  type DailySummary, type Signal, type SignalType, type WearableMetric,
 } from "../../domain/wearable";
+import { DEVICE_PROFILE_IDS, defaultProfileFor, profileOf, unsupportedMetrics, type DeviceProfileId } from "../../domain/devices";
 import type { Actor } from "../auth/session";
 import { audit } from "../audit";
 import { assertCaseRead, assertCaseWrite } from "../authz";
@@ -43,12 +44,20 @@ const summarySchema = z
     spo2Min: opt(50, 100),
     fallEvents: opt(0, 100),
     sosEvents: opt(0, 100),
+    // contract 0.2 — ring-type metrics (docs/SIGRING_INTEGRATION.md)
+    sleepDeepMinutes: opt(0, 1440),
+    sleepRemMinutes: opt(0, 1440),
+    hrvRmssd: opt(1, 300),
+    skinTempDeviationC: z.number().min(-5).max(5).nullable().optional(),
+    stressIndex: opt(0, 100),
+    vitalityScore: opt(0, 100),
   })
-  .strict(); // unknown fields (e.g. location, raw streams) are rejected, not silently dropped
+  .strict();
+const V02_FIELDS = ["sleepDeepMinutes", "sleepRemMinutes", "hrvRmssd", "skinTempDeviationC", "stressIndex", "vitalityScore"] as const; // unknown fields (e.g. location, raw streams) are rejected, not silently dropped
 
 export const dailySummariesBody = z
   .object({
-    schemaVersion: z.literal("0.1"),
+    schemaVersion: z.enum(["0.1", "0.2"]),
     deviceRef: z.string().regex(/^[A-Za-z0-9._:-]{4,64}$/),
     summaries: z.array(summarySchema).min(1).max(31),
   })
@@ -60,6 +69,7 @@ export const dailySummariesBody = z
       if (Number.isNaN(Date.parse(`${s.date}T00:00:00Z`))) ctx.addIssue({ code: "custom", path: ["summaries", i, "date"], message: "올바른 날짜가 아닙니다." });
       if (s.date > tomorrow) ctx.addIssue({ code: "custom", path: ["summaries", i, "date"], message: "미래 날짜의 요약은 받을 수 없습니다." });
       if (seen.has(s.date)) ctx.addIssue({ code: "custom", path: ["summaries", i, "date"], message: "같은 날짜가 중복되었습니다." });
+      if (b.schemaVersion === "0.1") for (const f of V02_FIELDS) if (s[f] != null) ctx.addIssue({ code: "custom", path: ["summaries", i, f], message: "이 항목은 schemaVersion 0.2에서만 받을 수 있습니다." });
       seen.add(s.date);
     });
   });
@@ -77,7 +87,8 @@ type DeviceRow = { id: string; case_id: string; status: string; consent_status: 
 
 const SUMMARY_COLS = `to_char(summary_date, 'YYYY-MM-DD') AS date, wear_minutes AS "wearMinutes", steps, active_minutes AS "activeMinutes", sleep_minutes AS "sleepMinutes",
   resting_heart_rate AS "restingHeartRate", heart_rate_min AS "heartRateMin", heart_rate_max AS "heartRateMax", spo2_min AS "spo2Min",
-  fall_events AS "fallEvents", sos_events AS "sosEvents"`;
+  fall_events AS "fallEvents", sos_events AS "sosEvents", sleep_deep_minutes AS "sleepDeepMinutes", sleep_rem_minutes AS "sleepRemMinutes",
+  hrv_rmssd AS "hrvRmssd", skin_temp_dev_c AS "skinTempDeviationC", stress_index AS "stressIndex", vitality_score AS "vitalityScore"`;
 
 /** POST /api/integrations/wearables/daily-summaries */
 export async function receiveDailySummaries(db: Db, client: IntegrationClient, body: unknown, traceHeader: string | null): Promise<Outcome> {
@@ -115,14 +126,18 @@ export async function receiveDailySummaries(db: Db, client: IntegrationClient, b
     for (const s of b.summaries) {
       await tx.query(
         `INSERT INTO wearable_daily_summaries (id, tenant_id, device_id, case_id, summary_date, wear_minutes, steps, active_minutes, sleep_minutes,
-           resting_heart_rate, heart_rate_min, heart_rate_max, spo2_min, fall_events, sos_events)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+           resting_heart_rate, heart_rate_min, heart_rate_max, spo2_min, fall_events, sos_events,
+           sleep_deep_minutes, sleep_rem_minutes, hrv_rmssd, skin_temp_dev_c, stress_index, vitality_score)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
          ON CONFLICT (tenant_id, device_id, summary_date) DO UPDATE SET
            wear_minutes = EXCLUDED.wear_minutes, steps = EXCLUDED.steps, active_minutes = EXCLUDED.active_minutes, sleep_minutes = EXCLUDED.sleep_minutes,
            resting_heart_rate = EXCLUDED.resting_heart_rate, heart_rate_min = EXCLUDED.heart_rate_min, heart_rate_max = EXCLUDED.heart_rate_max,
-           spo2_min = EXCLUDED.spo2_min, fall_events = EXCLUDED.fall_events, sos_events = EXCLUDED.sos_events, received_at = now()`,
+           spo2_min = EXCLUDED.spo2_min, fall_events = EXCLUDED.fall_events, sos_events = EXCLUDED.sos_events,
+           sleep_deep_minutes = EXCLUDED.sleep_deep_minutes, sleep_rem_minutes = EXCLUDED.sleep_rem_minutes, hrv_rmssd = EXCLUDED.hrv_rmssd,
+           skin_temp_dev_c = EXCLUDED.skin_temp_dev_c, stress_index = EXCLUDED.stress_index, vitality_score = EXCLUDED.vitality_score, received_at = now()`,
         [newId("wds"), client.tenantId, dev.id, dev.case_id, s.date, s.wearMinutes, s.steps ?? null, s.activeMinutes ?? null, s.sleepMinutes ?? null,
-          s.restingHeartRate ?? null, s.heartRateMin ?? null, s.heartRateMax ?? null, s.spo2Min ?? null, s.fallEvents ?? null, s.sosEvents ?? null],
+          s.restingHeartRate ?? null, s.heartRateMin ?? null, s.heartRateMax ?? null, s.spo2Min ?? null, s.fallEvents ?? null, s.sosEvents ?? null,
+          s.sleepDeepMinutes ?? null, s.sleepRemMinutes ?? null, s.hrvRmssd ?? null, s.skinTempDeviationC ?? null, s.stressIndex ?? null, s.vitalityScore ?? null],
       );
     }
     await tx.query(`UPDATE wearable_devices SET last_received_at = now() WHERE id = $1`, [dev.id]);
@@ -203,8 +218,8 @@ export async function getWearableOverview(tx: Db, actor: Actor, caseId: string) 
     `SELECT id, metrics, legal_basis, consent_recorded_at, retention_days, status, withdrawn_at FROM wearable_consents WHERE case_id = $1 ORDER BY created_at DESC`,
     [caseId],
   );
-  const devices = await tx.query<{ id: string; device_kind: string; device_ref: string; model_label: string; status: string; paired_at: string; last_received_at: string | null; gateway_name: string; consent_id: string }>(
-    `SELECT d.id, d.device_kind, d.device_ref, d.model_label, d.status, d.paired_at, d.last_received_at, d.consent_id, ic.source_org_name AS gateway_name
+  const devices = await tx.query<{ id: string; device_kind: string; device_profile: string; device_ref: string; model_label: string; status: string; paired_at: string; last_received_at: string | null; gateway_name: string; consent_id: string }>(
+    `SELECT d.id, d.device_kind, d.device_profile, d.device_ref, d.model_label, d.status, d.paired_at, d.last_received_at, d.consent_id, ic.source_org_name AS gateway_name
        FROM wearable_devices d JOIN integration_clients ic ON ic.id = d.client_id WHERE d.case_id = $1 ORDER BY d.paired_at DESC`,
     [caseId],
   );
@@ -233,6 +248,7 @@ export async function listWearableGateways(tx: Db) {
 export const registerDeviceBody = z.object({
   clientId: z.string().min(1).max(80),
   deviceKind: z.enum(DEVICE_KINDS),
+  deviceProfile: z.enum(DEVICE_PROFILE_IDS as [DeviceProfileId, ...DeviceProfileId[]]).optional(),
   deviceRef: z.string().trim().regex(/^[A-Za-z0-9._:-]{4,64}$/, "기기 참조값은 영문·숫자·._:- 4~64자입니다."),
   modelLabel: z.string().trim().max(80).default(""),
   metrics: z.array(z.enum(WEARABLE_METRICS)).min(1).max(WEARABLE_METRICS.length),
@@ -245,6 +261,12 @@ export const registerDeviceBody = z.object({
 export async function registerDevice(tx: Db, actor: Actor, caseId: string, b: z.infer<typeof registerDeviceBody>) {
   await assertCaseWrite(tx, actor, caseId);
   if (!b.metrics.includes("wear")) throw invalid("착용 시간 항목은 필수입니다. (다른 항목을 해석하는 기준)");
+  const profileId = b.deviceProfile ?? defaultProfileFor(b.deviceKind);
+  const profile = profileOf(profileId);
+  if (profile.kind !== b.deviceKind) throw invalid(`${profile.label}은(는) ${b.deviceKind === "smart_ring" ? "스마트워치" : "스마트링"} 프로필입니다. 기기 종류를 확인하세요.`);
+  const unsupported = unsupportedMetrics(profileId, b.metrics);
+  if (unsupported.length)
+    throw invalid(`이 기기는 다음 항목을 측정하지 않습니다: ${unsupported.map((m) => WEARABLE_METRIC_LABEL[m as WearableMetric] ?? m).join(", ")}. 측정하지 않는 항목은 동의받지 않습니다.`, { unsupported });
   const [gw] = await tx.query<{ id: string }>(`SELECT id FROM integration_clients WHERE id = $1 AND is_active AND $2 = ANY(scopes)`, [b.clientId, WEARABLE_SCOPE]);
   if (!gw) throw invalid("웨어러블 수신이 허용된 연계 게이트웨이가 아닙니다.");
   const [active] = await tx.query(`SELECT 1 FROM wearable_devices WHERE case_id = $1 AND status = 'active'`, [caseId]);
@@ -259,10 +281,10 @@ export async function registerDevice(tx: Db, actor: Actor, caseId: string, b: z.
   );
   const deviceId = newId("wdv");
   await tx.query(
-    `INSERT INTO wearable_devices (id, tenant_id, case_id, consent_id, client_id, device_ref, device_kind, model_label) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [deviceId, actor.tenantId, caseId, consentId, b.clientId, b.deviceRef, b.deviceKind, b.modelLabel],
+    `INSERT INTO wearable_devices (id, tenant_id, case_id, consent_id, client_id, device_ref, device_kind, model_label, device_profile) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [deviceId, actor.tenantId, caseId, consentId, b.clientId, b.deviceRef, b.deviceKind, b.modelLabel, profileId],
   );
-  await audit(tx, actor, "wearable.register", { type: "wearable_device", id: deviceId }, "success", { deviceKind: b.deviceKind, metrics: b.metrics, retentionDays: b.retentionDays });
+  await audit(tx, actor, "wearable.register", { type: "wearable_device", id: deviceId }, "success", { deviceKind: b.deviceKind, deviceProfile: profileId, metrics: b.metrics, retentionDays: b.retentionDays });
   return { id: deviceId, consentId };
 }
 

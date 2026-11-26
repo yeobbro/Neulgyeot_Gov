@@ -6,8 +6,10 @@ import * as m004 from "./migrations/004_provider_source_registry";
 import * as m005 from "./migrations/005_ai_jobs";
 import * as m006 from "./migrations/006_ai_draft_review";
 import * as m007 from "./migrations/007_wearables";
+import * as m008 from "./migrations/008_control";
+import * as m009 from "./migrations/009_device_profiles";
 
-export const migrations = [m001, m002, m003, m004, m005, m006, m007];
+export const migrations = [m001, m002, m003, m004, m005, m006, m007, m008, m009];
 
 export async function applyMigrations(db: Db): Promise<string[]> {
   await db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`);

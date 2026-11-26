@@ -4,7 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { BASE, closeBrowser, getBrowser, loginAs } from "./helpers.mjs";
 
 after(closeBrowser);
-const PAGES = ["/dashboard", "/referrals", "/referrals/ir_2", "/cases", "/cases/case_3", "/cases/case_4?tab=plan", "/cases/case_9?tab=assessment", "/cases/case_3?tab=services", "/providers", "/map", "/reports", "/tasks", "/admin", "/audit"];
+const PAGES = ["/dashboard", "/control", "/referrals", "/referrals/ir_2", "/cases", "/cases/case_3", "/cases/case_4?tab=plan", "/cases/case_9?tab=assessment", "/cases/case_3?tab=services", "/providers", "/map", "/reports", "/tasks", "/admin", "/audit"];
 
 test("axe: no serious or critical accessibility violations", async () => {
   const b = await getBrowser();
