@@ -5,11 +5,13 @@ import { BASE, closeBrowser, loginAs } from "./helpers.mjs";
 after(closeBrowser);
 const ADMIN = "usr_gaon_admin", CM = "usr_gaon_cm1", PV = "usr_gaon_pv2";
 
+// Wait for the form's API call itself. The success message is transient: ApiForm calls router.refresh() right after
+// showing it, and when the refreshed page no longer renders that form the message vanishes before it can be observed.
 const ok = async (page, form) => {
+  const response = page.waitForResponse((r) => new URL(r.url()).pathname.startsWith("/api/") && r.request().method() !== "GET", { timeout: 15000 });
   await form.locator('button[type="submit"]').click();
-  await page.locator(".alert-ok:visible, .alert-error:visible").first().waitFor({ timeout: 15000 });
-  const err = await page.locator(".alert-error:visible").count();
-  if (err) throw new Error("form error: " + (await page.locator(".alert-error:visible").first().innerText()));
+  const r = await response;
+  if (r.status() >= 400) throw new Error(`form error ${r.status()}: ${await r.text()}`);
 };
 
 test("S1 admin: dashboard → referral inbox → detail → assign worker", async () => {
