@@ -1,0 +1,29 @@
+{
+  "_source": "Neulgyeot-AI-Integration-Design/prototype (ai_ext/server.py, ai_ext/tokens.py) and Neulgyeot-AI-Intelligence/llm/adapters.py, read-only snapshot 2026-11-06; regenerate when the prototype changes",
+  "error_codes": [
+    "busy",
+    "forbidden_scope",
+    "input_too_large",
+    "internal_error",
+    "invalid_request",
+    "not_found",
+    "real_data_blocked",
+    "tenant_mismatch",
+    "token_expired",
+    "token_revoked",
+    "unauthenticated"
+  ],
+  "no_result_reasons": [
+    "all_sentences_rejected",
+    "llm_disabled",
+    "no_usable_records",
+    "schema_invalid"
+  ],
+  "llm_adapter_reasons": [
+    "blocked",
+    "error",
+    "invalid_json",
+    "timeout",
+    "unavailable"
+  ]
+}

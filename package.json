@@ -13,6 +13,8 @@
     "test": "tsx --test --test-concurrency=1 tests/unit/*.test.ts tests/api/*.test.ts",
     "test:e2e": "node --test --test-concurrency=1 tests/e2e/*.test.mjs",
     "test:pg": "tsx --test --test-concurrency=1 tests/pg/*.test.ts",
+    "test:smoke": "node tests/smoke/production-smoke.mjs",
+    "check:env": "tsx scripts/check-env.mts",
     "db:migrate": "tsx scripts/db.mts migrate",
     "db:seed": "tsx scripts/db.mts seed",
     "db:reset": "tsx scripts/db.mts reset"

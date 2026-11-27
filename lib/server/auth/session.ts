@@ -29,7 +29,10 @@ let warned = false;
 function secret(): string {
   const s = process.env.SESSION_SECRET;
   if (s && s.length >= 32) return s;
-  if (process.env.NODE_ENV === "production" && process.env.DEMO_MODE !== "true") {
+  // The fallback secret is public (it is in this repository). It is tolerated only for a production DEMO that runs on
+  // the non-persistent in-memory database. With a persistent database (DATABASE_URL) it would let anyone forge
+  // sessions for real data, so DEMO_MODE does not relax this rule there.
+  if (process.env.NODE_ENV === "production" && (process.env.DEMO_MODE !== "true" || process.env.DATABASE_URL)) {
     throw new Error("SESSION_SECRET (32+ chars) is required in production.");
   }
   if (process.env.NODE_ENV === "production" && !warned) {
@@ -129,5 +132,8 @@ export async function loadActor(tx: Db, userId: string): Promise<Actor | null> {
 export function demoLoginEnabled(): boolean {
   if (process.env.DEMO_LOGIN === "false") return false;
   if (process.env.NODE_ENV !== "production") return true;
+  // Password-less demo accounts on a PERSISTENT production database only with an explicit opt-in (synthetic staging
+  // only — scripts/check-env.mts flags it). DEMO_MODE alone is not enough once DATABASE_URL is set.
+  if (process.env.DATABASE_URL) return process.env.DEMO_MODE === "true" && process.env.DEMO_LOGIN === "true";
   return process.env.DEMO_MODE === "true";
 }
